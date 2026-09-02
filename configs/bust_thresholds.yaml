@@ -1,0 +1,45 @@
+primary_quantile: 0.90
+strict_quantile: 0.95
+minimum_training_samples_per_group: 30
+normalization: training_q90_scale
+grouping:
+  - region_id
+  - season
+  - lead_day
+critical_event_override: true
+
+rainfall:
+  model_grid_resolution_degrees: 0.5
+  region_mode: grid_and_all_india
+  thresholds_mm:
+    heavy: 64.5
+    very_heavy: 115.6
+    extremely_heavy: 204.5
+  probability_rules:
+    critical_miss_below: 0.20
+    false_alarm_at_or_above: 0.50
+  fss:
+    rainfall_threshold_mm: 64.5
+    neighbourhood_degrees: 1.0
+    aggregation: mean_memberwise_fss
+  objects:
+    rainfall_threshold_mm: 64.5
+    forecast_probability_threshold: 0.50
+    connectivity: 8
+    minimum_cells: 4
+  timing:
+    search_days: 2
+  composite_weights:
+    z_mae: 0.50
+    event_error: 0.30
+    fss_error: 0.20
+  pilot_label: candidate_only
+  final_label: strict_q95
+
+categories:
+  - heavy_rainfall
+  - monsoon_depression
+  - cyclone
+  - heatwave
+  - western_disturbance
+  - active_break_monsoon

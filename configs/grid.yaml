@@ -1,0 +1,24 @@
+domain:
+  north: 38.0
+  west: 65.0
+  south: 5.0
+  east: 100.0
+  bounds_role: cell_edges
+resolution_degrees: 0.5
+cell_centres:
+  latitude_start: 5.25
+  latitude_end: 37.75
+  longitude_start: 65.25
+  longitude_end: 99.75
+rainfall_time_alignment:
+  observation_window: 24_hours_ending_03_utc
+  available_forecast_window: 00_to_00_utc_daily
+  method: seven_eighths_current_plus_one_eighth_next
+  status: explicitly_approved_pilot_approximation
+  retained_lead_days: 9
+output_views:
+  - grid
+  - district
+  - state
+  - meteorological_region
+district_output_status: experimental_at_0p5_degree

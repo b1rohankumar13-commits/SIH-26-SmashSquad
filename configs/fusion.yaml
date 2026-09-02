@@ -1,0 +1,7 @@
+model: logistic_regression
+inputs:
+  - calibrated_xgboost_probability
+  - calibrated_convlstm_probability
+  - model_disagreement
+output: final_overall_bust_probability
+training_predictions: out_of_fold_or_validation_only

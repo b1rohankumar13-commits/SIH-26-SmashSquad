@@ -1,0 +1,12 @@
+dimensions:
+  init_time: forecast issue timestamp
+  valid_time: timestamp being predicted or observed
+  lead_hours: valid_time minus init_time in hours
+  member: ensemble member identifier
+  latitude: north latitude in degrees
+  longitude: east longitude in degrees
+targets:
+  bust_label: historical binary label only; never a live input feature
+  overall_bust_probability: final calibrated model output in the range 0 to 1
+diagnostics:
+  category_tags: zero or more of the six event-context categories

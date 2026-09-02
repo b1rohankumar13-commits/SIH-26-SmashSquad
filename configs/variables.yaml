@@ -1,0 +1,18 @@
+surface:
+  - total_precipitation
+  - mean_sea_level_pressure
+  - surface_pressure
+  - 2m_temperature
+  - 2m_maximum_temperature
+  - 2m_minimum_temperature
+  - 10m_u_wind
+  - 10m_v_wind
+pressure_levels:
+  levels_hpa: [850, 700, 500, 300]
+  variables:
+    - temperature
+    - specific_humidity
+    - u_wind
+    - v_wind
+    - geopotential_height
+lead_hours: [24, 48, 72, 96, 120, 144, 168, 192, 216, 240]

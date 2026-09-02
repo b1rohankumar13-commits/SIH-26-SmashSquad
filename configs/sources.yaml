@@ -1,0 +1,21 @@
+tigge:
+  dataset_url: https://ecds.ecmwf.int/datasets/tigge-forecasts
+  cycle: "00"
+gefs_reforecast:
+  bucket: s3://noaa-gefs-retrospective/
+  cycle: "00"
+gefs_operational:
+  bucket: s3://noaa-gefs-pds/
+  cycle: latest
+imd:
+  rainfall_url: https://imdpune.gov.in/cmpg/Griddata/Rainfall_25_NetCDF.html
+  maximum_temperature_url: https://imdpune.gov.in/cmpg/Griddata/Max_1_Bin.html
+  minimum_temperature_url: https://imdpune.gov.in/cmpg/Griddata/Min_1_Bin.html
+rsmc:
+  best_track_url: https://rsmcnewdelhi.imd.gov.in/report.php?internal_menu=MzM%3D
+imdaa:
+  portal_url: https://rds.ncmrwf.gov.in/
+era5:
+  portal_url: https://cds.climate.copernicus.eu/
+gpm:
+  portal_url: https://disc.gsfc.nasa.gov/datasets/GPM_3IMERGDF_07/summary
