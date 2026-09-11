@@ -6,3 +6,7 @@ n_estimators: 500
 subsample: 0.8
 colsample_bytree: 0.8
 random_state: 42
+prediction_unit: initialization_lead_grid_cell
+class_imbalance: training_fold_scale_pos_weight
+split: chronological
+n_jobs: -1

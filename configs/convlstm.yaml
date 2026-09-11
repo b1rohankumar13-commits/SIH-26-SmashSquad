@@ -1,7 +1,40 @@
-sequence_length: 10
+framework: tensorflow_keras
+sequence_length: 9
+input_layout: batch_time_latitude_longitude_channel
+input_grid:
+  latitude_cells: 66
+  longitude_cells: 70
+channels:
+  - rainfall_mean_mm
+  - rainfall_spread_mm
+  - mslp_mean_pa
+  - mslp_spread_pa
+  - u850_mean_ms
+  - u850_spread_ms
+  - v850_mean_ms
+  - v850_spread_ms
+  - q850_mean_kgkg
+  - q850_spread_kgkg
+  - gh500_mean_gpm
+  - gh500_spread_gpm
 hidden_channels: [16, 32]
 kernel_size: 3
 batch_size: 2
 learning_rate: 0.001
-mixed_precision: true
-output: overall_bust_probability
+dropout: 0.15
+recurrent_dropout: 0.0
+l2_regularization: 0.0001
+epochs: 100
+early_stopping_patience: 12
+reduce_lr_patience: 5
+mixed_precision: auto
+output: grid_and_lead_bust_probabilities
+output_layout: batch_lead_latitude_longitude_1
+label_layout: batch_lead_latitude_longitude_1
+missing_label: nan_masked_from_loss_and_metrics
+normalization: training_only_channel_standardization
+loss: weighted_binary_crossentropy
+metrics:
+  - pr_auc
+  - roc_auc
+  - brier_score

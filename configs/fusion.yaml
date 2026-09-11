@@ -1,7 +1,11 @@
 model: logistic_regression
 inputs:
-  - calibrated_xgboost_probability
-  - calibrated_convlstm_probability
+  - xgboost_probability
+  - spatial_probability
   - model_disagreement
 output: final_overall_bust_probability
 training_predictions: out_of_fold_or_validation_only
+prediction_unit: initialization_lead_grid_cell
+join_keys: [run_id, lead_day, grid_id]
+calibration: final_stacker_sigmoid_on_separate_chronological_period
+decision_threshold: validation_selected_not_fixed

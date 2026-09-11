@@ -1,1 +1,1 @@
-"""XGBoost, ConvLSTM, fusion, calibration, and inference models."""
+"""Grid/lead bust models with keyed fusion and final probability calibration."""

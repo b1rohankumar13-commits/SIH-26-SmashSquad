@@ -1,0 +1,104 @@
+source:
+  provider: NOAA
+  model: GEFS
+  archive: noaa-gefs-pds
+  base_url: https://noaa-gefs-pds.s3.amazonaws.com
+  native_grid_degrees: 0.5
+
+period:
+  years: [2021, 2022, 2023]
+  cycle: "00"
+
+members:
+  - gec00
+  - gep01
+  - gep02
+  - gep03
+  - gep04
+  - gep05
+  - gep06
+  - gep07
+  - gep08
+  - gep09
+  - gep10
+
+schedule:
+  daily_lead_hours: [24, 48, 72, 96, 120, 144, 168, 192, 216, 240]
+  six_hourly_lead_hours:
+    start: 6
+    stop: 240
+    step: 6
+  six_hourly_fields:
+    - total_precipitation
+    - 2m_temperature
+  derived_daily_fields:
+    24h_total_precipitation: sum_four_six_hour_accumulations
+    24h_maximum_temperature: maximum_of_four_six_hour_snapshots
+    24h_minimum_temperature: minimum_of_four_six_hour_snapshots
+  temperature_extrema_note: Six-hour snapshots approximate daily extrema; GEFS pgrb2a does not expose MAXT/MINT records for this archive date.
+
+domain:
+  north: 38.0
+  west: 65.0
+  south: 5.0
+  east: 100.0
+  target_grid_degrees: 1.0
+
+products:
+  pgrb2a:
+    directory: pgrb2ap5
+    token: pgrb2a
+    grid_token: 0p50
+  pgrb2b:
+    directory: pgrb2bp5
+    token: pgrb2b
+    grid_token: 0p50
+
+selectors:
+  pgrb2a_daily:
+    - {variable: PRES, level: surface}
+    - {variable: PRMSL, level: mean sea level}
+    - {variable: UGRD, level: 10 m above ground}
+    - {variable: VGRD, level: 10 m above ground}
+    - {variable: HGT, level: 850 mb}
+    - {variable: TMP, level: 850 mb}
+    - {variable: UGRD, level: 850 mb}
+    - {variable: VGRD, level: 850 mb}
+    - {variable: HGT, level: 700 mb}
+    - {variable: TMP, level: 700 mb}
+    - {variable: UGRD, level: 700 mb}
+    - {variable: VGRD, level: 700 mb}
+    - {variable: HGT, level: 500 mb}
+    - {variable: TMP, level: 500 mb}
+    - {variable: UGRD, level: 500 mb}
+    - {variable: VGRD, level: 500 mb}
+    - {variable: HGT, level: 300 mb}
+    - {variable: UGRD, level: 300 mb}
+    - {variable: VGRD, level: 300 mb}
+  pgrb2a_six_hourly:
+    - {variable: APCP, level: surface}
+    - {variable: TMP, level: 2 m above ground}
+  pgrb2b_daily:
+    - {variable: TMP, level: 300 mb}
+    - {variable: SPFH, level: 850 mb}
+    - {variable: SPFH, level: 700 mb}
+    - {variable: SPFH, level: 500 mb}
+    - {variable: SPFH, level: 300 mb}
+
+limits:
+  storage_ceiling_gb: 100
+  stop_at_fraction: 0.90
+  request_timeout_seconds: 60
+  concurrent_index_requests: 6
+  concurrent_data_requests: 8
+
+output:
+  root: data/raw/forecasts/gefs/noaa_pds_2021_2023
+  staging_root: data/raw/forecasts/gefs/.staging_noaa_pds_2021_2023
+  regional_root: data/interim/forecasts/gefs/noaa_pds_2021_2023
+  retention_mode: verified_regional_1p0_only
+  estimated_minimum_crop_ratio: 100
+  manifest: data/metadata/gefs_2021_2023_manifest.jsonl
+  regional_manifest: data/metadata/gefs_2021_2023_regional_manifest.jsonl
+  acquisition_log: logs/acquisition_gefs_2021_2023.jsonl
+  checkpoint: data/metadata/gefs_2021_2023_completed_dates.jsonl
