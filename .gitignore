@@ -1,3 +1,16 @@
 .env
 .venv/
 __pycache__/
+
+# Large data (lives on D via junctions) and run artifacts — never commit
+/data/raw/
+/data/interim/
+/data/metadata/gefs_reforecast_completed_dates.jsonl
+/data/metadata/gefs_reforecast_manifest.jsonl
+/data/metadata/gefs_reforecast_regional_manifest.jsonl
+/logs/
+/outputs/*.pt
+*.nc
+*.grib2
+*.grib2.idx
+*.pt
