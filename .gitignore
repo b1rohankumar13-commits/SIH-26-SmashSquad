@@ -10,6 +10,7 @@ __pycache__/
 /data/metadata/gefs_reforecast_regional_manifest.jsonl
 /logs/
 /outputs/*.pt
+/outputs/*.json
 *.nc
 *.grib2
 *.grib2.idx

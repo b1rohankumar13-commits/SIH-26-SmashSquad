@@ -56,7 +56,8 @@ class GridGraphNet(nn.Module):
             self._edge_cache[key] = cached
         return cached
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def features(self, x: torch.Tensor) -> torch.Tensor:
+        """Encoder output (SAGE + TCN) as per-cell hidden features [B, L, lat, lon, hidden]."""
         if x.dim() != 5 or x.shape[2] != self.n_lat or x.shape[3] != self.n_lon:
             raise ValueError(f"Expected [B, L, {self.n_lat}, {self.n_lon}, C], got {tuple(x.shape)}")
         batch, leads, n_lat, n_lon, channels = x.shape
@@ -72,6 +73,8 @@ class GridGraphNet(nn.Module):
                     .permute(0, 2, 3, 1).reshape(batch * nodes, hidden, leads))
         for conv in self.tcn:
             temporal = temporal + self.temporal_dropout(torch.relu(conv(temporal)))
-        temporal = temporal.reshape(batch, nodes, hidden, leads).permute(0, 3, 1, 2)
+        return temporal.reshape(batch, nodes, hidden, leads).permute(0, 3, 1, 2).reshape(
+            batch, leads, n_lat, n_lon, hidden)
 
-        return torch.sigmoid(self.head(temporal)).reshape(batch, leads, n_lat, n_lon, 1)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.sigmoid(self.head(self.features(x)))

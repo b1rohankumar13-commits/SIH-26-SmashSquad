@@ -15,6 +15,8 @@ import xarray as xr
 
 CANONICAL_DIMS = ("run", "lead", "latitude", "longitude")
 
+EXCEEDANCE_THRESHOLDS_MM: tuple[float, ...] = (64.5, 115.6, 204.5)
+
 CHANNEL_NAMES: tuple[str, ...] = (
     "rainfall_mean_mm", "rainfall_spread_mm",
     "mslp_mean_pa", "mslp_spread_pa",
@@ -22,7 +24,14 @@ CHANNEL_NAMES: tuple[str, ...] = (
     "v850_mean_ms", "v850_spread_ms",
     "q850_mean_kgkg", "q850_spread_kgkg",
     "gh500_mean_gpm", "gh500_spread_gpm",
+    # Ensemble exceedance probabilities at the bust thresholds (the tail signal the
+    # mean/spread channels miss; XGBoost found exc_heavy highly informative).
+    "rain_exc_heavy", "rain_exc_very_heavy", "rain_exc_extreme",
+    # Physics derived from the ensemble-mean fields.
+    "moisture_flux_850", "convergence_850", "vorticity_850", "gh500_grad",
 )
+
+N_CHANNELS: int = len(CHANNEL_NAMES)
 
 _BASE_CHANNELS: tuple[tuple[str, str, str], ...] = (
     ("rainfall", "rainfall_mean_mm", "rainfall_spread_mm"),
@@ -74,6 +83,35 @@ def _mean_and_spread(field: xr.DataArray, member_dim: str) -> tuple[xr.DataArray
     return mean.transpose(*CANONICAL_DIMS), spread.transpose(*CANONICAL_DIMS)
 
 
+def _derived_channels(
+    rainfall_field: xr.DataArray, means: dict[str, xr.DataArray], member_dim: str
+) -> list[xr.DataArray]:
+    """Exceedance-probability and physics channels from the ensemble fields already read."""
+    out: list[xr.DataArray] = []
+
+    exc_names = ("rain_exc_heavy", "rain_exc_very_heavy", "rain_exc_extreme")
+    for threshold, name in zip(EXCEEDANCE_THRESHOLDS_MM, exc_names):
+        prob = (rainfall_field >= threshold).mean(member_dim).transpose(*CANONICAL_DIMS)
+        out.append(prob.rename(name))
+
+    wind = np.sqrt(means["u850"] ** 2 + means["v850"] ** 2)
+    out.append((means["q850"] * wind).rename("moisture_flux_850"))
+
+    ref = means["u850"]
+    u, v, gh = means["u850"].values, means["v850"].values, means["gh500"].values
+    du_dlat, du_dlon = np.gradient(u, axis=2), np.gradient(u, axis=3)
+    dv_dlat, dv_dlon = np.gradient(v, axis=2), np.gradient(v, axis=3)
+    dgh_dlat, dgh_dlon = np.gradient(gh, axis=2), np.gradient(gh, axis=3)
+    derived = {
+        "convergence_850": -(du_dlon + dv_dlat),   # -(du/dx + dv/dy)
+        "vorticity_850": dv_dlon - du_dlat,          # dv/dx - du/dy
+        "gh500_grad": np.sqrt(dgh_dlat ** 2 + dgh_dlon ** 2),
+    }
+    for name, values in derived.items():
+        out.append(xr.DataArray(values, dims=ref.dims, coords=ref.coords, name=name))
+    return out
+
+
 def build_gridded_sequences(
     dataset: xr.Dataset,
     *,
@@ -87,12 +125,19 @@ def build_gridded_sequences(
         raise ValueError(f"variable_map is missing base fields {missing_bases}")
 
     channels: list[xr.DataArray] = []
+    means: dict[str, xr.DataArray] = {}
+    rainfall_field: xr.DataArray | None = None
     for base, mean_name, spread_name in _BASE_CHANNELS:
         variable, selection = variable_map[base]
         field = _select_base(dataset, variable, selection, member_dim)
         mean, spread = _mean_and_spread(field, member_dim)
         channels.append(mean.rename(mean_name))
         channels.append(spread.rename(spread_name))
+        means[base] = mean.transpose(*CANONICAL_DIMS)
+        if base == "rainfall":
+            rainfall_field = field
+
+    channels.extend(_derived_channels(rainfall_field, means, member_dim))
 
     reference = channels[0]
     for channel in channels[1:]:
