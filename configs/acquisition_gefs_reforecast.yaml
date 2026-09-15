@@ -1,0 +1,57 @@
+# GEFSv12 reforecast acquisition, 2000-2019 rainfall-pilot training set.
+
+source:
+  provider: NOAA
+  model: GEFSv12
+  archive: noaa-gefs-retrospective
+  base_url: https://noaa-gefs-retrospective.s3.amazonaws.com
+  prefix: GEFSv12/reforecast
+  native_grid_degrees: 0.25
+  day_range_folder: "Days:1-10"
+
+period:
+  years: [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+          2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019]
+  cycle: "00"
+
+members: [c00, p01, p02, p03, p04]
+
+schedule:
+  retained_lead_days: 9
+  precip_accumulation: sum_to_24h_ending_03utc
+
+# base channel -> (variable file, level or null); maps to the 12 convlstm.yaml channels
+channel_sources:
+  rainfall: {file: apcp_sfc, level: null}
+  mslp:     {file: pres_msl, level: null}
+  u850:     {file: ugrd_pres, level: 850}
+  v850:     {file: vgrd_pres, level: 850}
+  q850:     {file: spfh_pres, level: 850}
+  gh500:    {file: hgt_pres_abv700mb, level: 500}
+
+domain:
+  north: 38.0
+  west: 65.0
+  south: 5.0
+  east: 100.0
+  target_grid_degrees: 0.5
+
+limits:
+  storage_ceiling_gb: 200
+  stop_at_fraction: 0.90
+  request_timeout_seconds: 60
+  concurrent_file_workers: 24
+  decode_workers: 6
+
+output:
+  root: data/raw/forecasts/gefs/reforecast_2000_2019
+  staging_root: data/raw/forecasts/gefs/.staging_reforecast_2000_2019
+  regional_root: data/interim/forecasts/gefs/reforecast_2000_2019
+  retention_mode: verified_regional_only
+  manifest: data/metadata/gefs_reforecast_manifest.jsonl
+  regional_manifest: data/metadata/gefs_reforecast_regional_manifest.jsonl
+  acquisition_log: logs/acquisition_gefs_reforecast.jsonl
+  checkpoint: data/metadata/gefs_reforecast_completed_dates.jsonl
+
+validation_slice:
+  year: 2019
