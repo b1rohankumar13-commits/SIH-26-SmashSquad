@@ -126,6 +126,8 @@ def catalogue_values(frame: pd.DataFrame, column: str) -> list[str]:
 def _json_value(value: Any) -> Any:
     if isinstance(value, pd.Timestamp):
         return value.isoformat()
+    if hasattr(value, "tolist") and getattr(value, "ndim", 0) == 1:
+        return [str(item) for item in value.tolist()]
     if isinstance(value, (list, tuple, set)):
         return [str(item) for item in value]
     try:

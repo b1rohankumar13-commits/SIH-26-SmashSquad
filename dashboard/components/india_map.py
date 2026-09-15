@@ -2,12 +2,40 @@
 
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 import pydeck as pdk
 import streamlit as st
 
 
 MAP_COLUMNS = {"latitude", "longitude", "overall_bust_probability"}
+
+# The India grid spans this domain; the view is fitted to it and cannot zoom out
+# further, so the map frame always hugs the grid instead of the open ocean.
+GRID_BOUNDS = {"west": 65.25, "south": 5.25, "east": 99.75, "north": 37.75}
+# Square-ish frame matching the grid's near-1:1 geographic aspect.
+FRAME_PX = 540
+
+
+def _mercator_y(lat: float) -> float:
+    return math.log(math.tan(math.pi / 4 + math.radians(lat) / 2))
+
+
+def _fit_view(bounds: dict, size_px: int = FRAME_PX, pad: float = 0.04) -> dict:
+    """Centre and zoom that make the grid bounds fill a square frame."""
+    span_x = (bounds["east"] - bounds["west"]) / 360.0
+    span_y = (_mercator_y(bounds["north"]) - _mercator_y(bounds["south"])) / (2 * math.pi)
+    zoom = min(
+        math.log2(size_px * (1 - pad) / (512 * span_x)),
+        math.log2(size_px * (1 - pad) / (512 * span_y)),
+    )
+    mid_y = (_mercator_y(bounds["south"]) + _mercator_y(bounds["north"])) / 2
+    return {
+        "latitude": math.degrees(2 * math.atan(math.exp(mid_y)) - math.pi / 2),
+        "longitude": (bounds["west"] + bounds["east"]) / 2,
+        "zoom": zoom,
+    }
 
 
 def _probability_colour(value: float) -> list[int]:
@@ -74,15 +102,18 @@ def build_india_deck(map_data: pd.DataFrame | None) -> pdk.Deck:
                 },
             }
 
+    view = _fit_view(GRID_BOUNDS)
     return pdk.Deck(
         # CARTO's dark basemap matches the dashboard sidebar while keeping
         # coastlines, state boundaries, labels, and risk markers legible.
         map_style="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
         initial_view_state=pdk.ViewState(
-            latitude=22.4,
-            longitude=80.8,
-            zoom=3.55,
-            min_zoom=3,
+            latitude=view["latitude"],
+            longitude=view["longitude"],
+            zoom=view["zoom"],
+            # Lock the zoom-out to the fitted level so the grid is never
+            # dwarfed by empty ocean.
+            min_zoom=view["zoom"],
             max_zoom=9,
             pitch=0,
         ),
@@ -93,9 +124,26 @@ def build_india_deck(map_data: pd.DataFrame | None) -> pdk.Deck:
 
 
 def render_india_map(map_data: pd.DataFrame | None) -> None:
-    """Render the interactive India map."""
+    """Render the interactive India map in a square frame sized to the grid."""
+    st.markdown(
+        f"""
+        <style>
+        [data-testid="stDeckGlJsonChart"] > div {{
+          max-width: {FRAME_PX}px;
+          margin-inline: auto;
+        }}
+        /* Hide the basemap's own +/- control: it bypasses deck.gl's min-zoom
+           and would let the view pull out beyond the grid. Deck's scroll-zoom
+           stays and is clamped; the attribution control is left intact. */
+        [data-testid="stDeckGlJsonChart"] .mapboxgl-ctrl-group {{
+          display: none !important;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     st.pydeck_chart(
         build_india_deck(map_data),
         width="stretch",
-        height=430,
+        height=FRAME_PX,
     )
