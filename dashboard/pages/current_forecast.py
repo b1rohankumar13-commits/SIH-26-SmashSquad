@@ -13,6 +13,9 @@ from components.probability_panel import render_lead_probability_chart
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CURRENT_PREDICTIONS_DIR = PROJECT_ROOT / "outputs" / "current_predictions"
+# Only surface the leads the model has reliable skill at; beyond Day 5 it
+# systematically under-calls the late-lead bust resurgence.
+MAX_LEAD_DAY = 5
 PREDICTION_COLUMNS = {
     "latitude",
     "longitude",
@@ -503,6 +506,10 @@ if has_predictions and "region_id" in working_data.columns:
     working_data = working_data[
         working_data["region_id"].astype(str) == selected_region
     ]
+if has_predictions:
+    working_data = working_data[
+        pd.to_numeric(working_data["lead_day"], errors="coerce") <= MAX_LEAD_DAY
+    ]
 
 lead_options = (
     sorted(
@@ -561,7 +568,7 @@ st.markdown(
       <article class="card stat-card">
         <div class="eyebrow">Selected forecast lead</div>
         <div class="metric">{lead_text}</div>
-        <div class="metric-copy">Interactive Day 1–10 selection</div>
+        <div class="metric-copy">Interactive Day 1–5 selection</div>
       </article>
       <article class="card stat-card">
         <div class="eyebrow">Mapped coverage</div>
@@ -653,7 +660,7 @@ with chart_column:
             """
             <div class="card-head">
               <div>
-                <h2>Bust probability across Day 1–10</h2>
+                <h2>Bust probability across Day 1–5</h2>
                 <div class="card-subtitle">Interactive Plotly lead-time profile</div>
               </div>
             </div>
