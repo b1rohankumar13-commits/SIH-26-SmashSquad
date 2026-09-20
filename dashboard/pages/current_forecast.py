@@ -1,67 +1,17 @@
 """BustSentinel forecast-confidence dashboard."""
 
-import os
-from pathlib import Path
-
 import pandas as pd
-import requests
 import streamlit as st
 
+from category_data import (
+    CATEGORIES,
+    PROBABILITY_COLUMN,
+    category_rows,
+    category_summary,
+    load_current_predictions,
+)
 from components.india_map import render_india_map
 from components.probability_panel import render_lead_probability_chart
-
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-CURRENT_PREDICTIONS_DIR = PROJECT_ROOT / "outputs" / "current_predictions"
-PREDICTION_COLUMNS = {
-    "latitude",
-    "longitude",
-    "lead_day",
-    "overall_bust_probability",
-}
-
-
-@st.cache_data(ttl=30, show_spinner=False)
-def load_current_predictions() -> tuple[pd.DataFrame | None, Path | None]:
-    """Load predictions through FastAPI, with a local-development fallback."""
-    api_url = os.getenv("BUSTSENTINEL_API_URL", "").rstrip("/")
-    if api_url:
-        try:
-            response = requests.get(f"{api_url}/forecast/current", timeout=5)
-            response.raise_for_status()
-            payload = response.json()
-            if payload.get("status") == "available" and payload.get("records"):
-                return pd.DataFrame(payload["records"]), Path(
-                    payload.get("source_file") or "api_predictions.parquet"
-                )
-            return None, None
-        except (requests.RequestException, ValueError, TypeError):
-            pass
-
-    if not CURRENT_PREDICTIONS_DIR.exists():
-        return None, None
-
-    candidates = sorted(
-        [
-            *CURRENT_PREDICTIONS_DIR.glob("*.parquet"),
-            *CURRENT_PREDICTIONS_DIR.glob("*.csv"),
-        ],
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
-    )
-    for path in candidates:
-        try:
-            frame = (
-                pd.read_parquet(path)
-                if path.suffix.lower() == ".parquet"
-                else pd.read_csv(path)
-            )
-        except (OSError, ValueError):
-            continue
-        if PREDICTION_COLUMNS.issubset(frame.columns):
-            return frame, path
-    return None, None
-
 
 prediction_data, prediction_path = load_current_predictions()
 
@@ -69,15 +19,15 @@ st.markdown(
     """
     <style>
     :root {
-      --page: #f1f4f8;
-      --surface: #ffffff;
-      --nav: #101f35;
-      --nav-active: #243b5d;
-      --ink: #14253d;
-      --muted: #63748b;
-      --line: #dce3ec;
-      --blue: #245be8;
-      --blue-soft: #eaf0fd;
+      --page: var(--bs-page);
+      --surface: var(--bs-surface);
+      --nav: var(--bs-nav);
+      --nav-active: #ba643b;
+      --ink: var(--bs-ink);
+      --muted: var(--bs-muted);
+      --line: var(--bs-line);
+      --blue: var(--bs-blue);
+      --blue-soft: var(--bs-soft);
     }
 
     .stApp {
@@ -111,7 +61,7 @@ st.markdown(
         top: .65rem !important;
         left: .65rem !important;
         z-index: 100000 !important;
-        border: 1px solid rgba(126, 172, 255, .55) !important;
+        border: 1px solid rgba(230, 173, 131, .55) !important;
         border-radius: .5rem !important;
         background: var(--nav) !important;
         box-shadow: 0 .35rem 1rem rgba(9, 22, 40, .22) !important;
@@ -121,9 +71,9 @@ st.markdown(
       }
     }
     [data-testid="stSidebar"] > div:first-child { padding-top: 1.7rem; }
-    [data-testid="stSidebar"] * { color: #bdcadb; }
+    [data-testid="stSidebar"] * { color: #edf3f2; }
     [data-testid="stSidebar"] hr {
-      border-color: rgba(189, 202, 219, .16);
+      border-color: rgba(237, 243, 242, .2);
       margin: 1.45rem 0;
     }
     .block-container {
@@ -205,6 +155,7 @@ st.markdown(
     .title-row { margin-bottom: 1.15rem; }
     .title-row h1 {
       color: var(--ink);
+      font-family: "Lora", Georgia, "Times New Roman", serif;
       font-size: 1.78rem;
       line-height: 1.25;
       letter-spacing: -.035em;
@@ -238,8 +189,14 @@ st.markdown(
     .card {
       overflow: hidden;
       border: 1px solid var(--line);
-      border-radius: .65rem;
+      border-radius: .5rem;
       background: var(--surface);
+      box-shadow: 0 3px 11px rgba(21, 63, 67, .06);
+      transition: transform .18s ease, box-shadow .18s ease;
+    }
+    .card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 10px 24px rgba(21, 63, 67, .14);
     }
     .stat-card { min-height: 8.6rem; padding: 1rem 1.15rem; }
     .eyebrow {
@@ -266,14 +223,14 @@ st.markdown(
       padding: .95rem 1.1rem;
       border-bottom: 1px solid var(--line);
     }
-    .card-head h2 { color: var(--ink); font-size: 1.02rem; margin: 0; }
+    .card-head h2 { color: var(--ink); font-family: Georgia, "Times New Roman", serif; font-size: 1.05rem; margin: 0; }
     .card-subtitle { color: var(--muted); font-size: .78rem; margin-top: .15rem; }
     .card-body { padding: 1rem 1.1rem; }
     .status-pill {
       flex: 0 0 auto;
       border-radius: .3rem;
-      background: #f3f6fc;
-      color: #526c96;
+      background: var(--bs-soft);
+      color: #874327;
       padding: .24rem .55rem;
       font-size: .72rem;
       font-weight: 650;
@@ -285,12 +242,12 @@ st.markdown(
       display: grid;
       place-items: center;
       padding: 2rem;
-      color: #d8e5f2;
+      color: #edf3f2;
       text-align: center;
       background:
-        linear-gradient(rgba(91, 121, 151, .16) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(91, 121, 151, .16) 1px, transparent 1px),
-        #101f32;
+        linear-gradient(rgba(237, 243, 242, .16) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(237, 243, 242, .16) 1px, transparent 1px),
+        #142b42;
       background-size: 3.4rem 3.4rem;
     }
     .map-panel::after {
@@ -298,7 +255,7 @@ st.markdown(
       position: absolute;
       right: 1.3rem;
       bottom: 1rem;
-      color: #627e9c;
+      color: #bdd0d0;
       font-size: .85rem;
       letter-spacing: .18em;
     }
@@ -308,16 +265,16 @@ st.markdown(
       display: grid;
       place-items: center;
       margin: 0 auto .8rem;
-      border: 1px solid #47627d;
+      border: 1px solid #68889a;
       border-radius: .55rem;
-      color: #8fb7df;
+      color: #f0be96;
       background: rgba(39, 65, 91, .72);
     }
     .empty-title { color: inherit; font-size: .94rem; font-weight: 650; }
     .empty-copy {
       max-width: 27rem;
       margin: .3rem auto 0;
-      color: #9fb3c7;
+      color: #bdd0d0;
       font-size: .82rem;
       line-height: 1.5;
     }
@@ -350,9 +307,9 @@ st.markdown(
       gap: .75rem;
       margin-bottom: .85rem;
       padding: .8rem;
-      border: 1px solid #dfe7f3;
+      border: 1px solid var(--line);
       border-radius: .5rem;
-      background: #f7f9fd;
+      background: #f8f4ec;
     }
     .diagnostic-summary-icon {
       display: grid;
@@ -374,7 +331,7 @@ st.markdown(
       align-items: center;
       gap: .6rem;
       padding: .7rem;
-      border: 1px solid #edf0f5;
+      border: 1px solid var(--line);
       border-radius: .45rem;
     }
     .diagnostic-symbol {
@@ -383,14 +340,14 @@ st.markdown(
       width: 2rem;
       height: 2rem;
       border-radius: .4rem;
-      background: #f3f6fb;
-      color: #59739a;
+      background: var(--bs-soft);
+      color: #874327;
       font-size: .82rem;
     }
     .diagnostic-title { color: var(--ink); font-size: .82rem; font-weight: 650; }
     .diagnostic-copy { color: var(--muted); font-size: .74rem; margin-top: .1rem; }
     .diagnostic-state {
-      color: #71839b;
+      color: var(--muted);
       font-size: .68rem;
       font-weight: 650;
       letter-spacing: .04em;
@@ -399,10 +356,27 @@ st.markdown(
     .empty-line {
       height: .45rem;
       border-radius: 1rem;
-      background: #edf1f7;
       margin: .8rem 0;
+      background: linear-gradient(90deg, #e4dfd3 25%, #f1ede2 37%, #e4dfd3 63%);
+      background-size: 400% 100%;
+      animation: shimmer 1.4s ease infinite;
     }
     .empty-line.short { width: 64%; }
+    .skeleton {
+      display: inline-block;
+      vertical-align: middle;
+      height: 1.9rem;
+      width: 4.5rem;
+      border-radius: .3rem;
+      background: linear-gradient(90deg, #e4dfd3 25%, #f1ede2 37%, #e4dfd3 63%);
+      background-size: 400% 100%;
+      animation: shimmer 1.4s ease infinite;
+    }
+    .skeleton.skeleton-sm { height: 1.05rem; width: 3.4rem; border-radius: .25rem; }
+    @keyframes shimmer {
+      0% { background-position: 100% 50%; }
+      100% { background-position: 0 50%; }
+    }
     .key-value {
       display: flex;
       justify-content: space-between;
@@ -412,18 +386,31 @@ st.markdown(
       font-size: .82rem;
     }
     .key-value b { color: var(--ink); font-weight: 600; }
+    .category-risk-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 4rem 4.5rem;
+      align-items: center;
+      gap: .4rem;
+      padding: .55rem .35rem;
+      border-bottom: 1px solid var(--line);
+      color: var(--ink);
+      font-size: .75rem;
+    }
+    .category-risk-row span:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+    .category-risk-row.heading { color: var(--muted); font-size: .68rem; font-weight: 650; text-transform: uppercase; }
+    .category-risk-row.selected { background: var(--bs-soft); border-left: 3px solid var(--blue); }
     .chart-empty {
       min-height: 10.5rem;
       display: grid;
       place-items: center;
-      border-left: 1px solid #e7ebf1;
-      border-bottom: 1px solid #e7ebf1;
+      border-left: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
       color: var(--muted);
       text-align: center;
       font-size: .82rem;
       background:
-        linear-gradient(#edf1f6 1px, transparent 1px),
-        linear-gradient(90deg, #edf1f6 1px, transparent 1px);
+        linear-gradient(#e4e8e2 1px, transparent 1px),
+        linear-gradient(90deg, #e4e8e2 1px, transparent 1px);
       background-size: 3rem 2.4rem;
     }
     .section-gap { margin-top: 1rem; }
@@ -450,8 +437,7 @@ st.markdown(
       <span class="bs-brand-mark" aria-label="BustSentinel">B</span>
     </div>
     <div class="title-row">
-      <h1>Where could the forecast fail?</h1>
-      <p>Inspect uncertainty before the next forecast decision.</p>
+      <h1>Flag The Forecast Before It Fails</h1>
     </div>
     """,
     unsafe_allow_html=True,
@@ -461,7 +447,7 @@ has_predictions = prediction_data is not None and not prediction_data.empty
 working_data = prediction_data.copy() if has_predictions else pd.DataFrame()
 
 region_options = (
-    sorted(working_data["region_id"].dropna().astype(str).unique().tolist())
+    ["All regions", *sorted(working_data["region_id"].dropna().astype(str).unique().tolist())]
     if has_predictions and "region_id" in working_data.columns
     else ["All regions"]
 )
@@ -477,19 +463,7 @@ with control_columns[0]:
 with control_columns[1]:
     st.selectbox("Geographic view", ["Regional overview", "0.5° grid"], index=0)
 with control_columns[2]:
-    st.selectbox(
-        "Weather category",
-        [
-            "All categories",
-            "Heavy rainfall",
-            "Monsoon depression",
-            "Cyclone",
-            "Heat wave",
-            "Western disturbance",
-            "Active / break monsoon",
-        ],
-        index=0,
-    )
+    selected_category = st.selectbox("Weather category", CATEGORIES, index=0)
 with control_columns[3]:
     selected_run = st.selectbox(
         "Forecast initialization",
@@ -499,20 +473,21 @@ with control_columns[3]:
 
 if has_predictions and "run_id" in working_data.columns:
     working_data = working_data[working_data["run_id"].astype(str) == selected_run]
-if has_predictions and "region_id" in working_data.columns:
+if has_predictions and "region_id" in working_data.columns and selected_region != "All regions":
     working_data = working_data[
         working_data["region_id"].astype(str) == selected_region
     ]
 
+category_data = category_rows(working_data, selected_category)
 lead_options = (
     sorted(
-        pd.to_numeric(working_data["lead_day"], errors="coerce")
+        pd.to_numeric(category_data["lead_day"], errors="coerce")
         .dropna()
         .astype(int)
         .unique()
         .tolist()
     )
-    if has_predictions
+    if not category_data.empty
     else [1]
 )
 with control_columns[4]:
@@ -520,18 +495,18 @@ with control_columns[4]:
         "Lead day",
         lead_options,
         format_func=lambda value: f"Day {value}",
-        disabled=not has_predictions,
+        disabled=category_data.empty,
     )
 
 map_data = (
-    working_data[
-        pd.to_numeric(working_data["lead_day"], errors="coerce") == selected_lead
+    category_data[
+        pd.to_numeric(category_data["lead_day"], errors="coerce") == selected_lead
     ].copy()
-    if has_predictions
+    if not category_data.empty
     else None
 )
 valid_probability = (
-    pd.to_numeric(map_data["overall_bust_probability"], errors="coerce")
+    pd.to_numeric(map_data[PROBABILITY_COLUMN], errors="coerce")
     .dropna()
     .loc[lambda values: values.between(0, 1)]
     if map_data is not None and not map_data.empty
@@ -539,24 +514,35 @@ valid_probability = (
 )
 
 mean_probability = valid_probability.mean() if not valid_probability.empty else None
-probability_text = f"{mean_probability:.1%}" if mean_probability is not None else "—"
-confidence_text = f"{1 - mean_probability:.1%}" if mean_probability is not None else "—"
-lead_text = f"Day {selected_lead}" if has_predictions else "—"
-coverage_text = f"{len(valid_probability):,} cells" if not valid_probability.empty else "—"
+all_category_probabilities = category_summary(working_data, selected_lead)
+category_rows_html = "".join(
+    '<div class="category-risk-row{}"><span>{}</span><span>{}</span><span>{}</span></div>'.format(
+        " selected" if category == selected_category else "",
+        category,
+        f"{probability:.1%}" if probability is not None else "—",
+        f"{1 - probability:.1%}" if probability is not None else "—",
+    )
+    for category, probability in all_category_probabilities.items()
+)
+_skeleton = '<span class="skeleton"></span>'
+probability_text = f"{mean_probability:.1%}" if mean_probability is not None else _skeleton
+confidence_text = f"{1 - mean_probability:.1%}" if mean_probability is not None else _skeleton
+lead_text = f"Day {selected_lead}" if not category_data.empty else _skeleton
+coverage_text = f"{len(valid_probability):,} cells" if not valid_probability.empty else _skeleton
 map_status = "DATA LOADED" if not valid_probability.empty else "AWAITING DATA"
 
 st.markdown(
     f"""
     <div class="stats-grid">
       <article class="card stat-card">
-        <div class="eyebrow">Mean grid-cell bust probability</div>
+        <div class="eyebrow">{selected_category} bust probability</div>
         <div class="metric">{probability_text}</div>
-        <div class="metric-copy">Selected region and forecast lead</div>
+        <div class="metric-copy">Mean grid-cell risk · selected region and lead</div>
       </article>
       <article class="card stat-card">
         <div class="eyebrow">Mean forecast confidence</div>
         <div class="metric">{confidence_text}</div>
-        <div class="metric-copy">1 − mean bust probability</div>
+        <div class="metric-copy">1 − selected category bust probability</div>
       </article>
       <article class="card stat-card">
         <div class="eyebrow">Selected forecast lead</div>
@@ -580,21 +566,24 @@ with main_column:
             f"""
             <div class="card-head">
               <div>
-                <h2>Forecast bust outlook</h2>
+                <h2>{selected_category} bust outlook</h2>
               </div>
               <span class="status-pill">{map_status}</span>
             </div>
             """,
             unsafe_allow_html=True,
         )
-        render_india_map(map_data)
+        render_india_map(
+            map_data.assign(overall_bust_probability=map_data[PROBABILITY_COLUMN])
+            if map_data is not None and not map_data.empty else None
+        )
         st.markdown(
-            """
+            f"""
             <div class="legend">
-              <b>Bust probability</b>
-              <span><i class="dot" style="background:#299e98"></i>&lt;30%</span>
-              <span><i class="dot" style="background:#e9b748"></i>30–59%</span>
-              <span><i class="dot" style="background:#ee685d"></i>≥60%</span>
+              <b>{selected_category} bust probability</b>
+              <span><i class="dot" style="background:#4f9b98"></i>&lt;30%</span>
+              <span><i class="dot" style="background:#d5a14a"></i>30–59%</span>
+              <span><i class="dot" style="background:#bc624d"></i>≥60%</span>
             </div>
             """,
             unsafe_allow_html=True,
@@ -632,14 +621,16 @@ with side_column:
             </div>
           </div>
         </section>
-        <div class="section-gap"></div>
-        <section class="card">
-          <div class="card-head"><h2>Model agreement</h2></div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f"""
+        <section class="card section-gap">
+          <div class="card-head"><h2>Six-category bust outlook</h2><span class="status-pill">DAY {selected_lead}</span></div>
           <div class="card-body">
-            <div class="empty-line"></div>
-            <div class="empty-line short"></div>
-            <div class="empty-line"></div>
-            <div class="key-value"><span>Component disagreement</span><b>—</b></div>
+            <div class="category-risk-row heading"><span>Category</span><span>Bust</span><span>Confidence</span></div>
+            {category_rows_html}
           </div>
         </section>
         """,
@@ -650,17 +641,21 @@ chart_column, tracker_column = st.columns([1.1, 1], gap="medium")
 with chart_column:
     with st.container(border=True):
         st.markdown(
-            """
+            f"""
             <div class="card-head">
               <div>
-                <h2>Bust probability across Day 1–10</h2>
-                <div class="card-subtitle">Interactive Plotly lead-time profile</div>
+                <h2>{selected_category} bust probability across Day 1–10</h2>
+                <div class="card-subtitle">Selected category · mean grid-cell probability by lead</div>
               </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
-        render_lead_probability_chart(working_data if has_predictions else None)
+        render_lead_probability_chart(
+            category_data.assign(
+                overall_bust_probability=category_data[PROBABILITY_COLUMN]
+            ) if not category_data.empty else None
+        )
 
 with tracker_column:
     st.markdown(
@@ -668,10 +663,10 @@ with tracker_column:
         <section class="card section-gap">
           <div class="card-head"><h2>Coastal system tracker</h2></div>
           <div class="card-body">
-            <div class="key-value"><span>System ID</span><b>—</b></div>
-            <div class="key-value"><span>Classification</span><b>—</b></div>
-            <div class="key-value"><span>Forecast centre</span><b>—</b></div>
-            <div class="key-value"><span>Track stage</span><b>—</b></div>
+            <div class="key-value"><span>System ID</span><b><span class="skeleton skeleton-sm"></span></b></div>
+            <div class="key-value"><span>Classification</span><b><span class="skeleton skeleton-sm"></span></b></div>
+            <div class="key-value"><span>Forecast centre</span><b><span class="skeleton skeleton-sm"></span></b></div>
+            <div class="key-value"><span>Track stage</span><b><span class="skeleton skeleton-sm"></span></b></div>
           </div>
         </section>
         """,

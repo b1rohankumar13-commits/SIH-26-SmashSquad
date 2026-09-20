@@ -7,40 +7,41 @@ import pydeck as pdk
 import streamlit as st
 
 
-MAP_COLUMNS = {"latitude", "longitude", "overall_bust_probability"}
+MAP_COLUMNS = {"latitude", "longitude"}
 
 
 def _probability_colour(value: float) -> list[int]:
     """Return the dashboard risk colour for a probability in [0, 1]."""
     if value < 0.30:
-        return [41, 158, 152, 185]
+        return [79, 155, 152, 190]
     if value < 0.60:
-        return [233, 183, 72, 195]
-    return [238, 104, 93, 205]
+        return [213, 161, 74, 200]
+    return [188, 98, 77, 215]
 
 
-def build_india_deck(map_data: pd.DataFrame | None) -> pdk.Deck:
+def build_india_deck(
+    map_data: pd.DataFrame | None,
+    *,
+    probability_column: str = "overall_bust_probability",
+) -> pdk.Deck:
     """Build a map that is empty until valid prediction rows are supplied."""
     layers: list[pdk.Layer] = []
     tooltip = None
 
     if map_data is not None and not map_data.empty:
-        missing = MAP_COLUMNS.difference(map_data.columns)
+        required = MAP_COLUMNS | {probability_column}
+        missing = required.difference(map_data.columns)
         if missing:
             raise ValueError(f"Map data is missing required columns: {sorted(missing)}")
 
         frame = map_data.copy()
-        frame["overall_bust_probability"] = pd.to_numeric(
-            frame["overall_bust_probability"], errors="coerce"
-        )
+        frame[probability_column] = pd.to_numeric(frame[probability_column], errors="coerce")
         frame["latitude"] = pd.to_numeric(frame["latitude"], errors="coerce")
         frame["longitude"] = pd.to_numeric(frame["longitude"], errors="coerce")
-        frame = frame.dropna(subset=list(MAP_COLUMNS))
-        frame = frame[frame["overall_bust_probability"].between(0, 1)]
-        frame["probability_percent"] = (
-            frame["overall_bust_probability"] * 100
-        ).round(1)
-        frame["fill_colour"] = frame["overall_bust_probability"].map(
+        frame = frame.dropna(subset=list(required))
+        frame = frame[frame[probability_column].between(0, 1)]
+        frame["probability_percent"] = (frame[probability_column] * 100).round(1)
+        frame["fill_colour"] = frame[probability_column].map(
             _probability_colour
         )
 
@@ -51,7 +52,7 @@ def build_india_deck(map_data: pd.DataFrame | None) -> pdk.Deck:
                     data=frame,
                     get_position="[longitude, latitude]",
                     get_fill_color="fill_colour",
-                    get_line_color=[255, 255, 255, 70],
+                    get_line_color=[33, 53, 71, 95],
                     get_radius=17000,
                     radius_min_pixels=2,
                     radius_max_pixels=13,
@@ -68,16 +69,15 @@ def build_india_deck(map_data: pd.DataFrame | None) -> pdk.Deck:
                     "<b>Location:</b> {latitude}, {longitude}"
                 ),
                 "style": {
-                    "backgroundColor": "#14253d",
+                    "backgroundColor": "#213547",
                     "color": "white",
                     "fontFamily": "Segoe UI, sans-serif",
                 },
             }
 
     return pdk.Deck(
-        # CARTO's dark basemap matches the dashboard sidebar while keeping
-        # coastlines, state boundaries, labels, and risk markers legible.
-        map_style="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
+        # CARTO Voyager's warm light basemap matches the Forecast Atlas theme.
+        map_style="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
         initial_view_state=pdk.ViewState(
             latitude=22.4,
             longitude=80.8,
@@ -88,14 +88,18 @@ def build_india_deck(map_data: pd.DataFrame | None) -> pdk.Deck:
         ),
         layers=layers,
         tooltip=tooltip,
-        parameters={"clearColor": [16, 31, 53, 255]},
+        parameters={"clearColor": [244, 240, 232, 255]},
     )
 
 
-def render_india_map(map_data: pd.DataFrame | None) -> None:
+def render_india_map(
+    map_data: pd.DataFrame | None,
+    *,
+    probability_column: str = "overall_bust_probability",
+) -> None:
     """Render the interactive India map."""
     st.pydeck_chart(
-        build_india_deck(map_data),
+        build_india_deck(map_data, probability_column=probability_column),
         width="stretch",
         height=430,
     )
