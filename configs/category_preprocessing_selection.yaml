@@ -1,0 +1,59 @@
+status: preprocessing_available_inputs_running
+scope_reference: configs/acquisition_gefs_2021_2023.yaml
+forecast_source: archived_operational_GEFS_noaa_gefs_pds
+forecast_years: [2021, 2022, 2023]
+cycle_utc: '00'
+lead_days: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+target_grid_degrees: 1.0
+target_centres: {latitude: '37.5 to 5.5 descending', longitude: '65.5 to 99.5 ascending'}
+selection_basis: User delegated category-specific selection using the attached acquisition SOP.
+categories:
+  heavy_rainfall:
+    forecast: [rainfall_24h, mslp, u850, v850, q850, height500]
+    observations: [imd_rainfall]
+    supporting_evaluation: [gpm_imerg_final_ocean_coastal]
+  monsoon_depressions:
+    forecast: [rainfall_24h, mslp, surface_pressure, u850, v850, u700, v700, q850, q700, height500]
+    observations: [imd_best_track, imd_rainfall]
+    analysis: [mslp, surface_pressure, u850, v850, u700, v700, q850, q700, height500]
+  cyclones:
+    forecast: [rainfall_24h, mslp, u10, v10, u850, v850, u500, v500, height500]
+    observations: [imd_best_track, imd_landfall_reports, imd_rainfall]
+  heat_waves:
+    forecast: [temperature_2m_6hourly, tmax_6hour_snapshot_approximation, tmin_6hour_snapshot_approximation, rh2m, u10, v10, soil_water_0_10cm, surface_pressure, total_cloud_cover]
+    observations: [imd_tmax, imd_tmin, imd_temperature_climatology]
+    cloud_time_semantics: Preserve original GRIB averaging bounds; selected daily-lead cloud fields describe the final six hours, not a 24-hour mean.
+  western_disturbances:
+    forecast: [height500, u500, v500, u300, v300, temperature500, q700, mslp, rainfall_24h]
+    analysis: [height500, u500, v500, u300, v300, temperature500, q700, mslp]
+    observations: [imd_rainfall, imd_tmax, imd_tmin, imd_weather_report_context]
+  active_break_monsoon:
+    forecast: [rainfall_24h, u850, v850, q850, mslp, height500, total_cloud_cover]
+    observations: [imd_rainfall, imd_rainfall_climatology, imd_monsoon_reports]
+    analysis: [u850, v850, q850, mslp, height500]
+analysis_source:
+  selected: ERA5
+  reason: Official IMDAA coverage ends in 2020; the SOP permits ERA5 when IMDAA coverage is insufficient.
+  evidence: https://rds.ncmrwf.gov.in/about
+  matching_times: '00 UTC daily, matching retained daily GEFS circulation fields'
+  matching_valid_period: ['2021-01-02', '2024-01-10']
+  upper_air_requests:
+    - {variables: [u_component_of_wind, v_component_of_wind], pressure_levels_hpa: [300, 500, 700, 850]}
+    - {variables: [geopotential, temperature], pressure_levels_hpa: [500]}
+    - {variables: [specific_humidity], pressure_levels_hpa: [700, 850]}
+  single_level_variables: [mean_sea_level_pressure, surface_pressure]
+  access_status: waiting_for_CDS_configuration
+pending_user_decisions:
+  observed_climatology_years: null
+  forecast_training_years: null
+  rainfall_time_alignment: null
+later_derivations:
+  - Ensemble mean and spread from the selected members for each category's fields.
+  - Vorticity from selected winds, with numerical method documented before use.
+  - Run-to-run differences only at common valid times where both forecasts exist.
+  - Anomalies only after climatology and training periods are specified.
+  - Object tracking, event flags, error evidence and bust labels require their scientific definitions; none are created in this acquisition pass.
+storage:
+  inputs: Immutable existing retained files, plus separate supplement files with source hashes.
+  outputs: data/processed/categories/<category>/forecast and observations, with source manifests and temporal/quality metadata.
+  sharing: Shared source data acquired once; category outputs contain only the listed fields.

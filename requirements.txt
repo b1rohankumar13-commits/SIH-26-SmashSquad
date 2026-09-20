@@ -10,7 +10,7 @@ dask
 scipy
 scikit-learn
 xgboost
-torch
+tensorflow==2.21.0
 shap
 geopandas
 rasterio
@@ -26,4 +26,5 @@ fastapi
 uvicorn
 streamlit
 plotly
+pydeck
 pytest

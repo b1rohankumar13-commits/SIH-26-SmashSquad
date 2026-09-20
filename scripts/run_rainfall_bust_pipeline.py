@@ -1,5 +1,6 @@
 """Run rainfall metrics, threshold fitting, and honest bust labelling in order."""
 
+import argparse
 from pathlib import Path
 import sys
 
@@ -14,11 +15,14 @@ from scripts.label_rainfall_bust_events import label_events
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--training-end", required=True, help="Last training initialization date (YYYY-MM-DD)")
+    arguments = parser.parse_args()
     print("Stage 1/3: calculating grid and event metrics")
     build_metrics()
-    print("Stage 2/3: fitting historical normalization and Q90/Q95 thresholds")
-    fit_thresholds()
-    print("Stage 3/3: creating candidate or strict labels")
+    print("Stage 2/3: fitting historical Q90 normalization and Q85 bust thresholds")
+    fit_thresholds(training_end=arguments.training_end)
+    print("Stage 3/3: creating candidate or Q85 labels")
     label_events()
     print("Rainfall bust pipeline completed.")
 

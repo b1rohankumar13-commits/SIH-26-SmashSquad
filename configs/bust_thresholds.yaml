@@ -1,5 +1,5 @@
 primary_quantile: 0.90
-strict_quantile: 0.95
+bust_quantile: 0.85
 minimum_training_samples_per_group: 30
 normalization: training_q90_scale
 grouping:
@@ -34,7 +34,7 @@ rainfall:
     event_error: 0.30
     fss_error: 0.20
   pilot_label: candidate_only
-  final_label: strict_q95
+  final_label: composite_q85
 
 categories:
   - heavy_rainfall

@@ -232,7 +232,7 @@ def build_metrics():
                 ),
                 "candidate_bust": int(critical_object_miss or false_alarm_object),
                 "label_status": "candidate_only",
-                "strict_bust_label": "",
+                "bust_label": "",
                 "valid_grid_cells": valid_count,
                 "source_forecast": "tigge_ncmrwf",
                 "source_observation": "imd_0p25_rainfall",
