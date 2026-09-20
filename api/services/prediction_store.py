@@ -15,13 +15,17 @@ REQUIRED_COLUMNS = {
     "latitude",
     "longitude",
     "lead_day",
-    "overall_bust_probability",
 }
+PROBABILITY_COLUMNS = {"overall_bust_probability", "category_bust_probability"}
 API_COLUMNS = [
     "latitude",
     "longitude",
     "lead_day",
     "overall_bust_probability",
+    "category",
+    "category_bust_probability",
+    "model_id",
+    "grid_id",
     "region_id",
     "run_id",
     "init_time",
@@ -74,17 +78,32 @@ def load_current_snapshot(directory: Path | None = None) -> PredictionSnapshot:
         if missing:
             errors.append(f"{path.name}: missing {', '.join(sorted(missing))}")
             continue
+        if not PROBABILITY_COLUMNS.intersection(frame.columns):
+            errors.append(f"{path.name}: missing a bust probability column")
+            continue
+        if "category_bust_probability" in frame and "category" not in frame:
+            errors.append(f"{path.name}: category is required for category probabilities")
+            continue
 
         frame = frame.copy()
-        for column in REQUIRED_COLUMNS:
+        numeric_columns = REQUIRED_COLUMNS | (PROBABILITY_COLUMNS & set(frame.columns))
+        for column in numeric_columns:
             frame[column] = pd.to_numeric(frame[column], errors="coerce")
         frame = frame.dropna(subset=list(REQUIRED_COLUMNS))
+        valid_probability = pd.Series(False, index=frame.index)
+        for column in PROBABILITY_COLUMNS & set(frame.columns):
+            valid_probability |= frame[column].between(0, 1)
         frame = frame[
             frame["latitude"].between(-90, 90)
             & frame["longitude"].between(-180, 180)
             & frame["lead_day"].between(1, 10)
-            & frame["overall_bust_probability"].between(0, 1)
+            & valid_probability
         ]
+        if "category_bust_probability" in frame:
+            frame = frame[
+                frame["category_bust_probability"].isna()
+                | frame["category"].notna()
+            ]
         if frame.empty:
             errors.append(f"{path.name}: no valid forecast rows")
             continue
@@ -104,10 +123,11 @@ def filter_predictions(
     region_id: str | None = None,
     run_id: str | None = None,
     lead_day: int | None = None,
+    category: str | None = None,
 ) -> pd.DataFrame:
     """Apply optional dashboard filters to a validated prediction table."""
     selected = frame
-    for column, value in (("region_id", region_id), ("run_id", run_id)):
+    for column, value in (("region_id", region_id), ("run_id", run_id), ("category", category)):
         if value is not None:
             if column not in selected.columns:
                 return selected.iloc[0:0]

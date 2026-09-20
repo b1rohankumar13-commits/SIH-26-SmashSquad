@@ -18,6 +18,7 @@ router = APIRouter(prefix="/forecast", tags=["forecast"])
 def current_forecast(
     region_id: str | None = None,
     run_id: str | None = None,
+    category: str | None = None,
     lead_day: int | None = Query(default=None, ge=1, le=10),
     limit: int = Query(default=10_000, ge=1, le=50_000),
 ) -> CurrentForecastResponse:
@@ -30,6 +31,7 @@ def current_forecast(
         region_id=region_id,
         run_id=run_id,
         lead_day=lead_day,
+        category=category,
     )
     limited = selected.head(limit)
     return CurrentForecastResponse(

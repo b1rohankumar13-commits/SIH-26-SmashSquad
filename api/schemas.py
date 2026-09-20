@@ -14,7 +14,11 @@ class ForecastPoint(BaseModel):
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
     lead_day: int = Field(ge=1, le=10)
-    overall_bust_probability: float = Field(ge=0, le=1)
+    overall_bust_probability: float | None = Field(default=None, ge=0, le=1)
+    category: str | None = None
+    category_bust_probability: float | None = Field(default=None, ge=0, le=1)
+    model_id: str | None = None
+    grid_id: str | None = None
     region_id: str | None = None
     run_id: str | None = None
     init_time: datetime | None = None
