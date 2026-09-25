@@ -26,6 +26,7 @@ pages = [
     for label, icon, filename, is_default in PAGE_SPECS
 ]
 selected_page = st.navigation(pages, position="hidden")
+<<<<<<< HEAD
 active_page_href = "" if selected_page.title == "Current forecast" else selected_page.url_path
 
 st.markdown(
@@ -46,11 +47,29 @@ st.markdown(
       --bs-font-sans: "Inter", "Segoe UI", Arial, sans-serif;
       --bs-font-serif: "Lora", Georgia, "Times New Roman", serif;
       --bs-font-base: .9rem;
+=======
+
+st.markdown(
+    """
+    <style>
+    :root {
+      --bs-page: #f1f4f8;
+      --bs-surface: #ffffff;
+      --bs-ink: #14253d;
+      --bs-muted: #63748b;
+      --bs-line: #dce3ec;
+      --bs-blue: #245be8;
+      --bs-nav: #101f35;
+>>>>>>> origin/main
     }
     .stApp {
       background: var(--bs-page);
       color: var(--bs-ink);
+<<<<<<< HEAD
       font-family: var(--bs-font-sans);
+=======
+      font-family: "Segoe UI", Arial, sans-serif;
+>>>>>>> origin/main
     }
     [data-testid="stHeader"] { background: transparent; }
     [data-testid="stToolbar"] { visibility: hidden; }
@@ -59,19 +78,32 @@ st.markdown(
       padding: 1.2rem 1.875rem 3rem;
     }
     [data-testid="stSidebar"] {
+<<<<<<< HEAD
       background: var(--bs-nav);
+=======
+      background: #101f35;
+>>>>>>> origin/main
       border-right: 0;
     }
     [data-testid="stSidebar"] > div:first-child {
       padding: 2.2rem 1.35rem 1.5rem;
     }
+<<<<<<< HEAD
     [data-testid="stSidebar"] * { color: #edf3f2; }
     [data-testid="stSidebar"] hr { border-color: rgba(237, 243, 242, .2); }
+=======
+    [data-testid="stSidebar"] * { color: #c8d4e5; }
+    [data-testid="stSidebar"] hr { border-color: #2b3b51; }
+>>>>>>> origin/main
     .bs-brand {
       align-items: center;
       color: #fff;
       display: flex;
+<<<<<<< HEAD
       font-size: 1.56rem;
+=======
+      font-size: 1.38rem;
+>>>>>>> origin/main
       font-weight: 750;
       gap: .65rem;
       letter-spacing: -.035em;
@@ -80,6 +112,7 @@ st.markdown(
       align-items: center;
       background:
         radial-gradient(circle at 28% 20%, rgba(255, 255, 255, .42), transparent 32%),
+<<<<<<< HEAD
         linear-gradient(145deg, #d49269 0%, #ba643b 50%, #874327 100%);
       border: 1px solid rgba(255, 220, 185, .7);
       border-radius: .7rem;
@@ -103,6 +136,31 @@ st.markdown(
       color: #bdd0d0 !important;
       font-size: .78rem;
       letter-spacing: .16em;
+=======
+        linear-gradient(145deg, #78b5ff 0%, #3477f4 48%, #1746bd 100%);
+      border: 1px solid rgba(183, 215, 255, .72);
+      border-radius: .7rem;
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, .52),
+        inset 0 -3px 5px rgba(9, 42, 128, .35),
+        0 3px 0 #12398f,
+        0 8px 16px rgba(12, 45, 112, .32);
+      color: #fff !important;
+      display: inline-flex;
+      font-size: .9rem;
+      font-weight: 800;
+      height: 2rem;
+      justify-content: center;
+      position: relative;
+      text-shadow: 0 1px 2px rgba(6, 27, 78, .55);
+      transform: translateY(-1px);
+      width: 2rem;
+    }
+    .bs-subbrand, .bs-nav-label {
+      color: #91acd0 !important;
+      font-size: .69rem;
+      letter-spacing: .18em;
+>>>>>>> origin/main
       text-transform: uppercase;
     }
     .bs-subbrand { margin: .45rem 0 1.35rem 2.65rem; }
@@ -110,6 +168,7 @@ st.markdown(
     [data-testid="stSidebar"] [data-testid="stPageLink"] a {
       border-left: 3px solid transparent;
       border-radius: .45rem;
+<<<<<<< HEAD
       color: #edf3f2;
       font-size: 1.02rem;
       margin: .18rem 0;
@@ -132,6 +191,21 @@ st.markdown(
     [data-testid="stSidebar"] [data-testid="stPageLink"] a[aria-current="page"] {
       background: #ba643b;
       border-left-color: #e6ad83;
+=======
+      color: #c8d4e5;
+      margin: .18rem 0;
+      padding: .72rem .85rem;
+      text-decoration: none;
+      transition: background .15s ease, border-color .15s ease;
+    }
+    [data-testid="stSidebar"] [data-testid="stPageLink"] a:hover {
+      background: #1a2d49;
+      color: #fff;
+    }
+    [data-testid="stSidebar"] [data-testid="stPageLink"] a[aria-current="page"] {
+      background: #294569;
+      border-left-color: #71a8ff;
+>>>>>>> origin/main
       color: #fff;
     }
     .topbar {
@@ -148,9 +222,12 @@ st.markdown(
       font-size: .95rem;
       font-weight: 650;
     }
+<<<<<<< HEAD
     .title-row h1, .bs-card-head h2 {
       font-family: var(--bs-font-serif);
     }
+=======
+>>>>>>> origin/main
     .title-row { margin-bottom: 1.2rem; }
     .title-row h1 {
       color: var(--bs-ink);
@@ -175,6 +252,7 @@ st.markdown(
     .bs-card {
       background: var(--bs-surface);
       border: 1px solid var(--bs-line);
+<<<<<<< HEAD
       border-radius: .5rem;
       box-shadow: 0 3px 11px rgba(21, 63, 67, .06);
       overflow: hidden;
@@ -183,6 +261,10 @@ st.markdown(
     .bs-card:hover {
       transform: translateY(-3px);
       box-shadow: 0 10px 24px rgba(21, 63, 67, .14);
+=======
+      border-radius: .65rem;
+      overflow: hidden;
+>>>>>>> origin/main
     }
     .bs-card-head {
       align-items: center;
@@ -201,7 +283,11 @@ st.markdown(
     .bs-kv {
       align-items: baseline;
       display: flex;
+<<<<<<< HEAD
       font-size: var(--bs-font-base);
+=======
+      font-size: .9rem;
+>>>>>>> origin/main
       gap: 1rem;
       justify-content: space-between;
       padding: .48rem 0;
@@ -209,7 +295,11 @@ st.markdown(
     .bs-kv span { color: var(--bs-muted); }
     .bs-kv b { color: var(--bs-ink); font-weight: 600; text-align: right; }
     .bs-empty {
+<<<<<<< HEAD
       border: 1px dashed #c8d2ce;
+=======
+      border: 1px dashed #c5d1e2;
+>>>>>>> origin/main
       border-radius: .5rem;
       color: var(--bs-muted);
       font-size: .9rem;
@@ -233,9 +323,15 @@ st.markdown(
       margin: .2rem 0;
     }
     .bs-note {
+<<<<<<< HEAD
       background: var(--bs-soft);
       border-left: 3px solid var(--bs-blue);
       color: var(--bs-ink);
+=======
+      background: #f3f6fc;
+      border-left: 3px solid #7595d6;
+      color: #4f6480;
+>>>>>>> origin/main
       font-size: .84rem;
       margin-top: .8rem;
       padding: .75rem;
@@ -243,17 +339,26 @@ st.markdown(
     .bs-table-wrap { overflow-x: auto; }
     .bs-table { border-collapse: collapse; width: 100%; }
     .bs-table th, .bs-table td {
+<<<<<<< HEAD
       border-bottom: 1px solid var(--bs-line);
+=======
+      border-bottom: 1px solid #edf0f4;
+>>>>>>> origin/main
       padding: .75rem 1rem;
       text-align: left;
       white-space: nowrap;
     }
     .bs-table th {
+<<<<<<< HEAD
       background: #f6f4ed;
+=======
+      background: #f8fafc;
+>>>>>>> origin/main
       color: var(--bs-muted);
       font-size: .75rem;
       font-weight: 550;
     }
+<<<<<<< HEAD
     .bs-table td { color: var(--bs-muted); font-size: calc(var(--bs-font-base) - .04rem); }
     .bs-space { margin-top: 1rem; }
     .bs-skeleton {
@@ -281,6 +386,18 @@ st.markdown(
          reopen button) visible as a fallback in case it ever does collapse. */
       [data-testid="stSidebarCollapseButton"],
       [data-testid="stSidebarCollapseIconButton"] { display: none !important; }
+=======
+    .bs-table td { color: var(--bs-muted); font-size: .86rem; }
+    .bs-space { margin-top: 1rem; }
+    @media (min-width: 901px) {
+      section[data-testid="stSidebar"] {
+        display: block !important;
+        min-width: 14.0625rem !important;
+        transform: none !important;
+        width: 14.0625rem !important;
+      }
+      [data-testid="stSidebarCollapsedControl"] { display: none !important; }
+>>>>>>> origin/main
     }
     @media (max-width: 900px) {
       .bs-grid-3, .bs-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -295,6 +412,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+<<<<<<< HEAD
 # Streamlit page links do not expose aria-current, so mark the selected route.
 st.markdown(
     f"""
@@ -309,6 +427,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+=======
+>>>>>>> origin/main
 with st.sidebar:
     st.markdown(
         """
@@ -326,6 +446,7 @@ with st.sidebar:
         st.page_link(page, label=label, icon=icon, use_container_width=True)
 
 selected_page.run()
+<<<<<<< HEAD
 
 # Streamlit's sidebar is user-resizable and can remember a previously
 # dragged width for this browser session, which reasserts itself after our
@@ -366,3 +487,5 @@ st.components.v1.html(
     """,
     height=0,
 )
+=======
+>>>>>>> origin/main

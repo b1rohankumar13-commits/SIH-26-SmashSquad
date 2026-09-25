@@ -17,7 +17,7 @@ RAINFALL_CATALOGUE_FIELDS = (
     "event_error", "forecast_object_count", "observed_object_count",
     "matched_object_count", "mean_displacement_km", "timing_error_days",
     "critical_object_miss", "false_alarm_object", "critical_event_failure",
-    "candidate_bust", "label_status", "strict_bust_label", "valid_grid_cells",
+    "candidate_bust", "label_status", "bust_label", "valid_grid_cells",
     "source_forecast", "source_observation",
 )
 

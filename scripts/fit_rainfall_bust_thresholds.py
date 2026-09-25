@@ -1,5 +1,6 @@
-"""Fit training-Q90 normalization and Q90/Q95 rainfall-score thresholds."""
+"""Fit training-Q90 component normalization and a Q85 rainfall-bust cutoff."""
 
+import argparse
 import csv
 from datetime import datetime, timezone
 import json
@@ -34,7 +35,7 @@ REGISTRY_FILE = (
     PROJECT_ROOT
     / "models"
     / "registry"
-    / "rainfall_bust_thresholds_20190715_20190813.json"
+    / "rainfall_bust_thresholds_q85_20190715_20190813.json"
 )
 
 
@@ -49,26 +50,46 @@ def _group_key(row):
     return (row["region_id"], row["season"], int(row["lead_day"]))
 
 
-def fit_thresholds():
+def fit_thresholds(*, catalogue_file=CATALOGUE_FILE, registry_file=REGISTRY_FILE, training_end=None):
+    """Fit references on initialization dates through training_end, never validation dates."""
+    if training_end is None:
+        raise ValueError("A chronological training_end date is required for Q85 fitting")
+    cutoff = datetime.fromisoformat(str(training_end)).date()
     with CONFIG_FILE.open("r", encoding="utf-8") as stream:
         configuration = yaml.safe_load(stream)
     minimum_samples = int(configuration["minimum_training_samples_per_group"])
     weights = configuration["rainfall"]["composite_weights"]
 
-    if not CATALOGUE_FILE.is_file():
-        raise FileNotFoundError(CATALOGUE_FILE)
-    with CATALOGUE_FILE.open("r", newline="", encoding="utf-8") as stream:
+    catalogue_file = Path(catalogue_file)
+    registry_file = Path(registry_file)
+    if not catalogue_file.is_file():
+        raise FileNotFoundError(catalogue_file)
+    with catalogue_file.open("r", newline="", encoding="utf-8") as stream:
         rows = list(csv.DictReader(stream))
     if not rows:
-        raise ValueError(f"Rainfall event catalogue is empty: {CATALOGUE_FILE}")
+        raise ValueError(f"Rainfall event catalogue is empty: {catalogue_file}")
+
+    training_rows = [
+        row for row in rows
+        if datetime.fromisoformat(row["init_time"][:10]).date() <= cutoff
+    ]
+    if not training_rows:
+        raise ValueError("No forecast cases fall in the declared training period")
 
     grouped = {}
-    for row in rows:
+    for row in training_rows:
         grouped.setdefault(_group_key(row), []).append(row)
 
     registry_groups = {}
     ready_count = 0
     for (region_id, season, lead_day), group_rows in sorted(grouped.items()):
+        required_columns = (*NORMALIZED_COMPONENT_COLUMNS.values(), "event_error", "fss_error")
+        group_rows = [
+            row for row in group_rows
+            if all(np.isfinite(_float(row.get(column))) for column in required_columns)
+        ]
+        if not group_rows:
+            raise ValueError(f"No finite scoring rows for {region_id}|{season}|{lead_day}")
         statistics = {}
         for normalized_name, column in NORMALIZED_COMPONENT_COLUMNS.items():
             q90_scale = training_quantile_scale(
@@ -101,10 +122,7 @@ def fit_thresholds():
             "minimum_required": minimum_samples,
             "status": "ready" if enough_samples else "insufficient_history",
             "normalization": statistics,
-            "q90": float(np.quantile(scores, configuration["primary_quantile"]))
-            if enough_samples
-            else None,
-            "q95": float(np.quantile(scores, configuration["strict_quantile"]))
+            "q85": float(np.quantile(scores, configuration["bust_quantile"]))
             if enough_samples
             else None,
         }
@@ -113,20 +131,31 @@ def fit_thresholds():
         "schema_version": 1,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "normalization_method": configuration["normalization"],
-        "label_policy": "strict_q95",
+        "label_policy": "composite_q85",
+        "bust_quantile": float(configuration["bust_quantile"]),
+        "training_end": cutoff.isoformat(),
         "critical_event_override": bool(configuration["critical_event_override"]),
         "weights": weights,
         "status": "ready" if ready_count == len(registry_groups) else "insufficient_history",
         "groups": registry_groups,
     }
-    REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    REGISTRY_FILE.write_text(json.dumps(registry, indent=2), encoding="utf-8")
-    print(f"Catalogue rows: {len(rows)}")
+    registry_file.parent.mkdir(parents=True, exist_ok=True)
+    registry_file.write_text(json.dumps(registry, indent=2), encoding="utf-8")
+    print(f"Training catalogue rows: {len(training_rows)} of {len(rows)}")
     print(f"Ready groups: {ready_count}/{len(registry_groups)}")
     print(f"Registry status: {registry['status']}")
-    print(f"Saved: {REGISTRY_FILE}")
-    return REGISTRY_FILE
+    print(f"Saved: {registry_file}")
+    return registry_file
 
 
 if __name__ == "__main__":
-    fit_thresholds()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--training-end", required=True, help="Last training initialization date (YYYY-MM-DD)")
+    parser.add_argument("--catalogue", type=Path, default=CATALOGUE_FILE)
+    parser.add_argument("--registry", type=Path, default=REGISTRY_FILE)
+    arguments = parser.parse_args()
+    fit_thresholds(
+        catalogue_file=arguments.catalogue,
+        registry_file=arguments.registry,
+        training_end=arguments.training_end,
+    )

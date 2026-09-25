@@ -1,0 +1,24 @@
+source:
+  provider: NOAA
+  model: GEFSv12
+  archive: noaa-gefs-retrospective
+  role: historical_training_only
+period:
+  years: [2000, 2019]
+  cycle_utc: '00'
+members: [c00, p01, p02, p03, p04]
+grid:
+  bounds: {south: 5.0, north: 38.0, west: 65.0, east: 100.0}
+  resolution_degrees: 0.5
+  latitude_centres: '5.25 to 37.75'
+  longitude_centres: '65.25 to 99.75'
+forecast_lead_days: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+category_fields_reference: configs/category_preprocessing_selection.yaml
+label_policy_reference: configs/bust_thresholds.yaml
+rainfall_alignment_reference: configs/grid.yaml
+note: >-
+  This is the selected structured-input training profile going forward. Retain
+  the 2021-2023 operational GEFS data only for provenance; do not mix it into
+  the five-member training set. Forecast-observation alignment remains to be
+  verified. The approved 03 UTC rainfall alignment may retain only nine
+  verified leads without an additional forecast day.

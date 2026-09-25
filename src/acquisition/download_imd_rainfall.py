@@ -27,7 +27,7 @@ from urllib3.util.retry import Retry
 
 CATEGORY = "rainfall"
 SOURCE_ID = "imd-rainfall-025deg-yearly-netcdf"
-SOURCE_PAGE = "https://imdpune.gov.in/cmpg/Griddata/Rainfall_25_NetCDF.html"
+SOURCE_PAGE = "https://www.imdpune.gov.in/cmpg/Griddata/Rainfall_25_NetCDF.html"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RAW_ROOT = PROJECT_ROOT / "data" / "raw" / "observations" / "imd" / CATEGORY
 ACQUISITION_LOG = PROJECT_ROOT / "data" / "metadata" / "acquisition_log.jsonl"
@@ -59,6 +59,11 @@ def build_session() -> requests.Session:
     session.headers.update({"User-Agent": USER_AGENT})
     session.mount("https://", HTTPAdapter(max_retries=retry))
     session.mount("http://", HTTPAdapter(max_retries=retry))
+    # IMD's TLS certificate chain does not validate; the download is instead verified by
+    # NetCDF magic bytes and SHA-256 after transfer (see download_year).
+    session.verify = False
+    requests.packages.urllib3.disable_warnings(
+        requests.packages.urllib3.exceptions.InsecureRequestWarning)
     return session
 
 
@@ -93,7 +98,7 @@ def _candidate_netcdf_link(soup: BeautifulSoup, base_url: str, year: int) -> str
 
 def discover_plan(session: requests.Session, year: int) -> DownloadPlan:
     """Discover a direct link or form submission for one year from IMD HTML."""
-    response = session.get(SOURCE_PAGE, timeout=(15, 60))
+    response = session.get(SOURCE_PAGE, timeout=(60, 120))
     response.raise_for_status()
     soup = BeautifulSoup(response.text, "html.parser")
 
@@ -168,7 +173,7 @@ def _follow_html_result(
             "IMD returned HTML but no verified NetCDF link for the selected year. "
             "The site form may have changed; inspect it manually before changing this script."
         )
-    result = session.get(netcdf_url, timeout=(15, 300))
+    result = session.get(netcdf_url, timeout=(60, 300))
     result.raise_for_status()
     return result
 
@@ -180,9 +185,9 @@ def request_file(
 ) -> requests.Response:
     """Submit the discovered request and return the file response."""
     if plan.method == "POST":
-        response = session.post(plan.url, data=plan.fields, timeout=(15, 300))
+        response = session.post(plan.url, data=plan.fields, timeout=(60, 300))
     else:
-        response = session.get(plan.url, params=plan.fields or None, timeout=(15, 300))
+        response = session.get(plan.url, params=plan.fields or None, timeout=(60, 300))
     response.raise_for_status()
     response = _follow_html_result(session, response, year)
     if not _is_allowed_imd_url(response.url):

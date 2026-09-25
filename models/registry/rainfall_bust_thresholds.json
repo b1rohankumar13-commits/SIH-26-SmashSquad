@@ -1,0 +1,269 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-08-30T18:09:49.343390+00:00",
+  "normalization_method": "median_mad",
+  "label_policy": "strict_q95",
+  "critical_event_override": true,
+  "weights": {
+    "z_mae": 0.35,
+    "event_error": 0.25,
+    "z_displacement": 0.2,
+    "z_fss_error": 0.1,
+    "z_timing": 0.1
+  },
+  "status": "insufficient_history",
+  "groups": {
+    "all_india|southwest_monsoon|1": {
+      "region_id": "all_india",
+      "season": "southwest_monsoon",
+      "lead_day": 1,
+      "sample_count": 1,
+      "minimum_required": 30,
+      "status": "insufficient_history",
+      "normalization": {
+        "z_mae": {
+          "median": 12.583066940307617,
+          "scale": 1.0
+        },
+        "z_displacement": {
+          "median": 700.7691295682256,
+          "scale": 1.0
+        },
+        "z_fss_error": {
+          "median": 0.8094518821069349,
+          "scale": 1.0
+        },
+        "z_timing": {
+          "median": 0.0,
+          "scale": 1.0
+        }
+      },
+      "q90": null,
+      "q95": null
+    },
+    "all_india|southwest_monsoon|2": {
+      "region_id": "all_india",
+      "season": "southwest_monsoon",
+      "lead_day": 2,
+      "sample_count": 1,
+      "minimum_required": 30,
+      "status": "insufficient_history",
+      "normalization": {
+        "z_mae": {
+          "median": 9.978440284729004,
+          "scale": 1.0
+        },
+        "z_displacement": {
+          "median": 969.7137162475228,
+          "scale": 1.0
+        },
+        "z_fss_error": {
+          "median": 0.9066731317329215,
+          "scale": 1.0
+        },
+        "z_timing": {
+          "median": 0.0,
+          "scale": 1.0
+        }
+      },
+      "q90": null,
+      "q95": null
+    },
+    "all_india|southwest_monsoon|3": {
+      "region_id": "all_india",
+      "season": "southwest_monsoon",
+      "lead_day": 3,
+      "sample_count": 1,
+      "minimum_required": 30,
+      "status": "insufficient_history",
+      "normalization": {
+        "z_mae": {
+          "median": 9.534101486206055,
+          "scale": 1.0
+        },
+        "z_displacement": {
+          "median": 323.63691643085076,
+          "scale": 1.0
+        },
+        "z_fss_error": {
+          "median": 1.0225025613786838,
+          "scale": 1.0
+        },
+        "z_timing": {
+          "median": 0.0,
+          "scale": 1.0
+        }
+      },
+      "q90": null,
+      "q95": null
+    },
+    "all_india|southwest_monsoon|4": {
+      "region_id": "all_india",
+      "season": "southwest_monsoon",
+      "lead_day": 4,
+      "sample_count": 1,
+      "minimum_required": 30,
+      "status": "insufficient_history",
+      "normalization": {
+        "z_mae": {
+          "median": 11.616100311279297,
+          "scale": 1.0
+        },
+        "z_displacement": {
+          "median": 461.72610149073193,
+          "scale": 1.0
+        },
+        "z_fss_error": {
+          "median": 0.9135392478554114,
+          "scale": 1.0
+        },
+        "z_timing": {
+          "median": 0.0,
+          "scale": 1.0
+        }
+      },
+      "q90": null,
+      "q95": null
+    },
+    "all_india|southwest_monsoon|5": {
+      "region_id": "all_india",
+      "season": "southwest_monsoon",
+      "lead_day": 5,
+      "sample_count": 1,
+      "minimum_required": 30,
+      "status": "insufficient_history",
+      "normalization": {
+        "z_mae": {
+          "median": 12.856759071350098,
+          "scale": 1.0
+        },
+        "z_displacement": {
+          "median": 362.1895259955752,
+          "scale": 1.0
+        },
+        "z_fss_error": {
+          "median": 1.0400162451807942,
+          "scale": 1.0
+        },
+        "z_timing": {
+          "median": 0.0,
+          "scale": 1.0
+        }
+      },
+      "q90": null,
+      "q95": null
+    },
+    "all_india|southwest_monsoon|6": {
+      "region_id": "all_india",
+      "season": "southwest_monsoon",
+      "lead_day": 6,
+      "sample_count": 1,
+      "minimum_required": 30,
+      "status": "insufficient_history",
+      "normalization": {
+        "z_mae": {
+          "median": 12.552223205566406,
+          "scale": 1.0
+        },
+        "z_displacement": {
+          "median": 762.2062219852149,
+          "scale": 1.0
+        },
+        "z_fss_error": {
+          "median": 1.0179662995309462,
+          "scale": 1.0
+        },
+        "z_timing": {
+          "median": 0.0,
+          "scale": 1.0
+        }
+      },
+      "q90": null,
+      "q95": null
+    },
+    "all_india|southwest_monsoon|7": {
+      "region_id": "all_india",
+      "season": "southwest_monsoon",
+      "lead_day": 7,
+      "sample_count": 1,
+      "minimum_required": 30,
+      "status": "insufficient_history",
+      "normalization": {
+        "z_mae": {
+          "median": 11.1888427734375,
+          "scale": 1.0
+        },
+        "z_displacement": {
+          "median": 428.39055030962254,
+          "scale": 1.0
+        },
+        "z_fss_error": {
+          "median": 1.0489759990833483,
+          "scale": 1.0
+        },
+        "z_timing": {
+          "median": 0.0,
+          "scale": 1.0
+        }
+      },
+      "q90": null,
+      "q95": null
+    },
+    "all_india|southwest_monsoon|8": {
+      "region_id": "all_india",
+      "season": "southwest_monsoon",
+      "lead_day": 8,
+      "sample_count": 1,
+      "minimum_required": 30,
+      "status": "insufficient_history",
+      "normalization": {
+        "z_mae": {
+          "median": 9.742347717285156,
+          "scale": 1.0
+        },
+        "z_displacement": {
+          "median": 164.93114186596807,
+          "scale": 1.0
+        },
+        "z_fss_error": {
+          "median": 0.6894262441852455,
+          "scale": 1.0
+        },
+        "z_timing": {
+          "median": 0.0,
+          "scale": 1.0
+        }
+      },
+      "q90": null,
+      "q95": null
+    },
+    "all_india|southwest_monsoon|9": {
+      "region_id": "all_india",
+      "season": "southwest_monsoon",
+      "lead_day": 9,
+      "sample_count": 1,
+      "minimum_required": 30,
+      "status": "insufficient_history",
+      "normalization": {
+        "z_mae": {
+          "median": 9.422146797180176,
+          "scale": 1.0
+        },
+        "z_displacement": {
+          "median": 249.36626265694431,
+          "scale": 1.0
+        },
+        "z_fss_error": {
+          "median": 0.9411076025406114,
+          "scale": 1.0
+        },
+        "z_timing": {
+          "median": 0.0,
+          "scale": 1.0
+        }
+      },
+      "q90": null,
+      "q95": null
+    }
+  }
+}

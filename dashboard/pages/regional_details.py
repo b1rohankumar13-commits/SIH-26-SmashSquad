@@ -1,19 +1,27 @@
+<<<<<<< HEAD
 """Category-specific regional forecast evidence page."""
+=======
+"""Regional forecast evidence page."""
+>>>>>>> origin/main
 
 import pandas as pd
 import streamlit as st
 
+<<<<<<< HEAD
 from category_data import (
     CATEGORIES, PROBABILITY_COLUMN, category_rows,
     load_current_predictions,
 )
 from components.probability_panel import render_lead_probability_chart
+=======
+>>>>>>> origin/main
 from page_ui import render_header
 
 
 render_header(
     "Regional details",
     "Inspect a region in detail",
+<<<<<<< HEAD
     "Review category-specific bust probability and regional evidence.",
 )
 
@@ -69,6 +77,24 @@ st.markdown(
           <div class="bs-kv"><span>Selected lead</span><b>{lead_text}</b></div>
           <div class="bs-kv"><span>Valid grid cells</span><b>{coverage_text}</b></div>
           <div class="bs-note">Values are shown only for the selected category and completed run.</div>
+=======
+    "Review local confidence, contributing signals, and regime-aware evidence.",
+)
+
+st.selectbox("Region", ["No prediction regions available"], disabled=True)
+
+st.markdown(
+    """
+    <div class="bs-grid-2 bs-space">
+      <section class="bs-card">
+        <div class="bs-card-head"><h2>Regional forecast evidence</h2></div>
+        <div class="bs-card-body">
+          <div class="bs-kv"><span>Overall bust probability</span><b>—</b></div>
+          <div class="bs-kv"><span>Forecast confidence</span><b>—</b></div>
+          <div class="bs-kv"><span>Selected lead</span><b>—</b></div>
+          <div class="bs-kv"><span>Dominant diagnostic</span><b>Awaiting output</b></div>
+          <div class="bs-empty">Regional values will appear after a compatible prediction table is available.</div>
+>>>>>>> origin/main
         </div>
       </section>
       <section class="bs-card">
@@ -77,6 +103,7 @@ st.markdown(
           <div class="bs-kv"><span>Matched historical cases</span><b>—</b></div>
           <div class="bs-kv"><span>Regime-conditioned bust rate</span><b>—</b></div>
           <div class="bs-kv"><span>Evidence window</span><b>—</b></div>
+<<<<<<< HEAD
           <div class="bs-note">Verified category-specific historical comparisons are not connected yet.</div>
         </div>
       </section>
@@ -93,3 +120,18 @@ render_lead_probability_chart(
     selected.assign(overall_bust_probability=selected[PROBABILITY_COLUMN])
     if not selected.empty else None
 )
+=======
+          <div class="bs-note">Historical comparisons remain unavailable until verified cases are connected.</div>
+        </div>
+      </section>
+    </div>
+    <section class="bs-card">
+      <div class="bs-card-head"><h2>Lead-by-lead regional profile</h2></div>
+      <div class="bs-card-body">
+        <div class="bs-empty">Regional probability and diagnostic plots will appear here when data is available.</div>
+      </div>
+    </section>
+    """,
+    unsafe_allow_html=True,
+)
+>>>>>>> origin/main
