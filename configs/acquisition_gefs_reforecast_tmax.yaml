@@ -1,0 +1,60 @@
+source:
+  provider: NOAA
+  model: GEFSv12
+  archive: noaa-gefs-retrospective
+  base_url: https://noaa-gefs-retrospective.s3.amazonaws.com
+  prefix: GEFSv12/reforecast
+  native_grid_degrees: 0.25
+  day_range_folder: Days:1-10
+period:
+  years:
+  - 2000
+  - 2001
+  - 2002
+  - 2003
+  - 2004
+  - 2005
+  - 2006
+  - 2007
+  - 2008
+  - 2009
+  cycle: '00'
+members:
+- c00
+- p01
+- p02
+- p03
+- p04
+schedule:
+  retained_lead_days: 9
+  precip_accumulation: sum_to_24h_ending_03utc
+channel_sources:
+  tmax_2m:
+    file: tmax_2m
+    grib_var: TMAX
+    grib_level: 2 m above ground
+    target: tmax_2m
+    timing: daily_max
+domain:
+  north: 38.0
+  west: 65.0
+  south: 5.0
+  east: 100.0
+  target_grid_degrees: 0.5
+limits:
+  storage_ceiling_gb: 200
+  stop_at_fraction: 0.95
+  request_timeout_seconds: 60
+  concurrent_file_workers: 12
+  decode_workers: 6
+output:
+  root: data/raw/forecasts/gefs/reforecast_tmax
+  staging_root: data/raw/forecasts/gefs/.staging_tmax
+  regional_root: data/interim/forecasts/gefs/reforecast_2000_2019_tmax
+  retention_mode: verified_regional_only
+  manifest: data/metadata/gefs_tmax_manifest.jsonl
+  regional_manifest: data/metadata/gefs_tmax_regional_manifest.jsonl
+  acquisition_log: logs/acquisition_gefs_tmax.jsonl
+  checkpoint: data/metadata/gefs_tmax_completed_dates.jsonl
+validation_slice:
+  year: 2019

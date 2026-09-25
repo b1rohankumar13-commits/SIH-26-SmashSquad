@@ -1,0 +1,194 @@
+source:
+  provider: NOAA
+  model: GEFSv12
+  archive: noaa-gefs-retrospective
+  base_url: https://noaa-gefs-retrospective.s3.amazonaws.com
+  prefix: GEFSv12/reforecast
+  native_grid_degrees: 0.25
+  day_range_folder: Days:1-10
+period:
+  years:
+  - 2000
+  - 2001
+  - 2002
+  - 2003
+  - 2004
+  - 2005
+  - 2006
+  - 2007
+  - 2008
+  - 2009
+  cycle: '00'
+members:
+- c00
+- p01
+- p02
+- p03
+- p04
+schedule:
+  retained_lead_days: 9
+  precip_accumulation: sum_to_24h_ending_03utc
+channel_sources:
+  rainfall:
+    file: apcp_sfc
+  olr:
+    file: ulwrf_tatm
+    aggregate: mean
+  pres_msl:
+    file: pres_msl
+    grib_var: PRES
+    grib_level: mean sea level
+    target: pres_msl
+  pres_sfc:
+    file: pres_sfc
+    grib_var: PRES
+    grib_level: surface
+    target: pres_sfc
+  tmp_2m:
+    file: tmp_2m
+    grib_var: TMP
+    grib_level: 2 m above ground
+    target: tmp_2m
+  spfh_2m:
+    file: spfh_2m
+    grib_var: SPFH
+    grib_level: 2 m above ground
+    target: spfh_2m
+  cape:
+    file: cape_sfc
+    grib_var: CAPE
+    grib_level: surface
+    target: cape
+  ugrd_10m:
+    file: ugrd_hgt
+    grib_var: UGRD
+    grib_level: 10 m above ground
+    target: ugrd_10m
+  vgrd_10m:
+    file: vgrd_hgt
+    grib_var: VGRD
+    grib_level: 10 m above ground
+    target: vgrd_10m
+  tmp_850:
+    file: tmp_pres
+    grib_var: TMP
+    grib_level: 850 mb
+    target: tmp_850
+  tmp_700:
+    file: tmp_pres_abv700mb
+    grib_var: TMP
+    grib_level: 700 mb
+    target: tmp_700
+  tmp_500:
+    file: tmp_pres_abv700mb
+    grib_var: TMP
+    grib_level: 500 mb
+    target: tmp_500
+  tmp_300:
+    file: tmp_pres_abv700mb
+    grib_var: TMP
+    grib_level: 300 mb
+    target: tmp_300
+  ugrd_850:
+    file: ugrd_pres
+    grib_var: UGRD
+    grib_level: 850 mb
+    target: ugrd_850
+  ugrd_700:
+    file: ugrd_pres_abv700mb
+    grib_var: UGRD
+    grib_level: 700 mb
+    target: ugrd_700
+  ugrd_500:
+    file: ugrd_pres_abv700mb
+    grib_var: UGRD
+    grib_level: 500 mb
+    target: ugrd_500
+  ugrd_300:
+    file: ugrd_pres_abv700mb
+    grib_var: UGRD
+    grib_level: 300 mb
+    target: ugrd_300
+  vgrd_850:
+    file: vgrd_pres
+    grib_var: VGRD
+    grib_level: 850 mb
+    target: vgrd_850
+  vgrd_700:
+    file: vgrd_pres_abv700mb
+    grib_var: VGRD
+    grib_level: 700 mb
+    target: vgrd_700
+  vgrd_500:
+    file: vgrd_pres_abv700mb
+    grib_var: VGRD
+    grib_level: 500 mb
+    target: vgrd_500
+  vgrd_300:
+    file: vgrd_pres_abv700mb
+    grib_var: VGRD
+    grib_level: 300 mb
+    target: vgrd_300
+  spfh_850:
+    file: spfh_pres
+    grib_var: SPFH
+    grib_level: 850 mb
+    target: spfh_850
+  spfh_700:
+    file: spfh_pres_abv700mb
+    grib_var: SPFH
+    grib_level: 700 mb
+    target: spfh_700
+  spfh_500:
+    file: spfh_pres_abv700mb
+    grib_var: SPFH
+    grib_level: 500 mb
+    target: spfh_500
+  spfh_300:
+    file: spfh_pres_abv700mb
+    grib_var: SPFH
+    grib_level: 300 mb
+    target: spfh_300
+  hgt_850:
+    file: hgt_pres
+    grib_var: HGT
+    grib_level: 850 mb
+    target: hgt_850
+  hgt_700:
+    file: hgt_pres_abv700mb
+    grib_var: HGT
+    grib_level: 700 mb
+    target: hgt_700
+  hgt_500:
+    file: hgt_pres_abv700mb
+    grib_var: HGT
+    grib_level: 500 mb
+    target: hgt_500
+  hgt_300:
+    file: hgt_pres_abv700mb
+    grib_var: HGT
+    grib_level: 300 mb
+    target: hgt_300
+domain:
+  north: 38.0
+  west: 65.0
+  south: 5.0
+  east: 100.0
+  target_grid_degrees: 0.5
+limits:
+  storage_ceiling_gb: 400
+  stop_at_fraction: 0.95
+  request_timeout_seconds: 60
+  concurrent_file_workers: 12
+  decode_workers: 6
+output:
+  root: data/raw/forecasts/gefs/reforecast_mv
+  staging_root: data/raw/forecasts/gefs/.staging_mv
+  regional_root: data/interim/forecasts/gefs/reforecast_2000_2019_mv
+  retention_mode: verified_regional_only
+  manifest: data/metadata/gefs_mv_manifest.jsonl
+  regional_manifest: data/metadata/gefs_mv_regional_manifest.jsonl
+  acquisition_log: logs/acquisition_gefs_mv.jsonl
+  checkpoint: data/metadata/gefs_mv_completed_dates.jsonl
+validation_slice:
+  year: 2019

@@ -27,6 +27,9 @@ USER_AGENT = "SIH-Forecast-Bust-Research/1.0 (low-rate NOAA open-data acquisitio
 
 _INSTANT_STEP = re.compile(r"^(\d+) hour fcst$")
 _ACCUM_STEP = re.compile(r"^(\d+)-(\d+) hour acc fcst$")
+_AVG_STEP = re.compile(r"^(\d+)-(\d+) hour ave fcst$")
+_MAX_STEP = re.compile(r"^(\d+)-(\d+) hour max fcst$")
+_MIN_STEP = re.compile(r"^(\d+)-(\d+) hour min fcst$")
 
 
 @dataclass(frozen=True)
@@ -46,6 +49,21 @@ class IndexRecord:
     @property
     def accumulation(self) -> tuple[int, int] | None:
         match = _ACCUM_STEP.match(self.step)
+        return (int(match.group(1)), int(match.group(2))) if match else None
+
+    @property
+    def average(self) -> tuple[int, int] | None:
+        match = _AVG_STEP.match(self.step)
+        return (int(match.group(1)), int(match.group(2))) if match else None
+
+    @property
+    def maximum(self) -> tuple[int, int] | None:
+        match = _MAX_STEP.match(self.step)
+        return (int(match.group(1)), int(match.group(2))) if match else None
+
+    @property
+    def minimum(self) -> tuple[int, int] | None:
+        match = _MIN_STEP.match(self.step)
         return (int(match.group(1)), int(match.group(2))) if match else None
 
 
@@ -125,6 +143,63 @@ def select_precip_6h_buckets(
     if missing:
         raise ValueError(f"{variable}: missing 6h accumulation ends {missing}")
     return sorted(chosen, key=lambda record: record.accumulation[1])
+
+
+def select_avg_6h_buckets(
+    records: list[IndexRecord], variable: str, level: str, lead_days: int
+) -> list[IndexRecord]:
+    """Six-hour time-average buckets up to lead_days (four per day meaned to a daily mean)."""
+    horizon = lead_days * 24
+    chosen = [
+        record for record in records
+        if record.variable == variable and record.level == level
+        and record.average is not None
+        and record.average[1] - record.average[0] == 6
+        and record.average[1] <= horizon
+    ]
+    ends = {record.average[1] for record in chosen}
+    missing = sorted(set(range(6, horizon + 1, 6)) - ends)
+    if missing:
+        raise ValueError(f"{variable}: missing 6h average ends {missing}")
+    return sorted(chosen, key=lambda record: record.average[1])
+
+
+def select_max_6h_buckets(
+    records: list[IndexRecord], variable: str, level: str, lead_days: int
+) -> list[IndexRecord]:
+    """Six-hour maximum buckets up to lead_days (four per day reduced to a daily max)."""
+    horizon = lead_days * 24
+    chosen = [
+        record for record in records
+        if record.variable == variable and record.level == level
+        and record.maximum is not None
+        and record.maximum[1] - record.maximum[0] == 6
+        and record.maximum[1] <= horizon
+    ]
+    ends = {record.maximum[1] for record in chosen}
+    missing = sorted(set(range(6, horizon + 1, 6)) - ends)
+    if missing:
+        raise ValueError(f"{variable}: missing 6h maximum ends {missing}")
+    return sorted(chosen, key=lambda record: record.maximum[1])
+
+
+def select_min_6h_buckets(
+    records: list[IndexRecord], variable: str, level: str, lead_days: int
+) -> list[IndexRecord]:
+    """Six-hour minimum buckets up to lead_days (four per day reduced to a daily min)."""
+    horizon = lead_days * 24
+    chosen = [
+        record for record in records
+        if record.variable == variable and record.level == level
+        and record.minimum is not None
+        and record.minimum[1] - record.minimum[0] == 6
+        and record.minimum[1] <= horizon
+    ]
+    ends = {record.minimum[1] for record in chosen}
+    missing = sorted(set(range(6, horizon + 1, 6)) - ends)
+    if missing:
+        raise ValueError(f"{variable}: missing 6h minimum ends {missing}")
+    return sorted(chosen, key=lambda record: record.minimum[1])
 
 
 def merge_ranges(records: list[IndexRecord]) -> list[tuple[int, int | None]]:
@@ -232,6 +307,27 @@ def _decode_precip_daily(path: Path, lead_days: int) -> xr.DataArray:
     return _strip_to_grid(field.groupby("lead").sum().sortby("lead"))
 
 
+def _decode_avg_daily(path: Path, lead_days: int) -> xr.DataArray:
+    field = _open_concat(path)
+    day = ((_step_hours(field) - 1) // 24 + 1).astype(int)
+    field = field.assign_coords(lead=("step", day))
+    return _strip_to_grid(field.groupby("lead").mean().sortby("lead"))
+
+
+def _decode_max_daily(path: Path, lead_days: int) -> xr.DataArray:
+    field = _open_concat(path)
+    day = ((_step_hours(field) - 1) // 24 + 1).astype(int)
+    field = field.assign_coords(lead=("step", day))
+    return _strip_to_grid(field.groupby("lead").max().sortby("lead"))
+
+
+def _decode_min_daily(path: Path, lead_days: int) -> xr.DataArray:
+    field = _open_concat(path)
+    day = ((_step_hours(field) - 1) // 24 + 1).astype(int)
+    field = field.assign_coords(lead=("step", day))
+    return _strip_to_grid(field.groupby("lead").min().sortby("lead"))
+
+
 def _target_centres(domain: dict, step: float) -> tuple[np.ndarray, np.ndarray]:
     lats = np.arange(domain["south"] + step / 2, domain["north"], step)
     lons = np.arange(domain["west"] + step / 2, domain["east"], step)
@@ -249,30 +345,71 @@ def crop_and_regrid(field: xr.DataArray, domain: dict, step: float) -> xr.DataAr
     return cropped.interp(latitude=lats, longitude=lons, method="linear")
 
 
-def _select_for(base: str, records: list[IndexRecord], lead_days: int) -> list[IndexRecord]:
+def _select_for(base: str, records: list[IndexRecord], lead_days: int,
+                entry: dict | None = None) -> list[IndexRecord]:
     if base == "rainfall":
         return select_precip_6h_buckets(records, "APCP", lead_days)
-    variable, level = _GRIB_VAR_LEVEL[base]
+    if base == "olr":
+        return select_avg_6h_buckets(records, "ULWRF", "top of atmosphere", lead_days)
+    # Instant fields read their GRIB variable/level from the config entry when
+    # present, falling back to the built-in map for the original channel set.
+    if entry and entry.get("grib_var"):
+        variable, level = entry["grib_var"], entry["grib_level"]
+    else:
+        variable, level = _GRIB_VAR_LEVEL[base]
+    # Per-variable sampling. Non-diurnal fields (pressure, upper-air) keep the
+    # 00Z snapshot; surface fields with a diurnal cycle must declare `timing`
+    # (daily_max/daily_min/daily_mean, or an afternoon snapshot) or they get
+    # silently sampled at dawn — the bug that produced dawn CAPE and 00Z tmp_2m.
+    timing = (entry or {}).get("timing", "instant")
+    if timing == "daily_max":
+        return select_max_6h_buckets(records, variable, level, lead_days)
+    if timing == "daily_min":
+        return select_min_6h_buckets(records, variable, level, lead_days)
+    if timing == "daily_mean":
+        return select_avg_6h_buckets(records, variable, level, lead_days)
+    if timing == "afternoon":
+        offset = int((entry or {}).get("hour_offset", 9))  # 09Z ~ 14:30 IST
+        return select_instant(records, variable, level,
+                              [24 * d + offset for d in range(1, lead_days + 1)])
+    if timing != "instant":
+        raise ValueError(f"{base}: unknown timing {timing!r}")
     return select_instant(records, variable, level, [24 * d for d in range(1, lead_days + 1)])
 
 
-def fetch_field_raw(session, config, year, init, member, base, lead_days, timeout, staging) -> Path:
-    url = _variable_url(config, year, init, member, config["channel_sources"][base]["file"])
-    records = fetch_index(session, url, timeout)
-    raw = fetch_messages(session, url, _select_for(base, records, lead_days), timeout)
+def fetch_field_raw(session, config, year, init, member, base, lead_days, timeout, staging,
+                    index_cache=None) -> Path:
+    var_file = config["channel_sources"][base]["file"]
+    url = _variable_url(config, year, init, member, var_file)
+    if index_cache is not None and (member, var_file) in index_cache:
+        records = index_cache[(member, var_file)]
+    else:
+        records = fetch_index(session, url, timeout)
+    raw = fetch_messages(session, url, _select_for(base, records, lead_days,
+                                                   config["channel_sources"][base]), timeout)
     path = staging / f"{member}_{base}.grib2"
     path.write_bytes(raw)
     return path
 
 
-def decode_field(base: str, path: Path, lead_days: int) -> xr.DataArray:
+def decode_field(base: str, path: Path, lead_days: int, timing: str = "instant") -> xr.DataArray:
     if base == "rainfall":
         return _decode_precip_daily(path, lead_days)
+    if base == "olr":
+        return _decode_avg_daily(path, lead_days)
+    if timing == "daily_max":
+        return _decode_max_daily(path, lead_days)
+    if timing == "daily_min":
+        return _decode_min_daily(path, lead_days)
+    if timing == "daily_mean":
+        return _decode_avg_daily(path, lead_days)
+    # "instant" and "afternoon" are both single-record-per-day snapshots.
     return _decode_instant(path, lead_days)
 
 
-def _decode_and_crop(base: str, path_str: str, lead_days: int, domain: dict, step: float) -> xr.DataArray:
-    return crop_and_regrid(decode_field(base, Path(path_str), lead_days), domain, step)
+def _decode_and_crop(base: str, path_str: str, lead_days: int, domain: dict, step: float,
+                     timing: str = "instant") -> xr.DataArray:
+    return crop_and_regrid(decode_field(base, Path(path_str), lead_days, timing), domain, step)
 
 
 def execute_init(session, config, year: int, init: str, members: list[str],
@@ -287,11 +424,27 @@ def execute_init(session, config, year: int, init: str, members: list[str],
     staging.mkdir(parents=True, exist_ok=True)
 
     tasks = [(member, base) for base in config["channel_sources"] for member in members]
+
+    # Phase 1: fetch each (member, variable-file) index exactly once. Pressure
+    # levels of the same variable share one file, so this avoids re-downloading
+    # the same .idx for every level.
+    unique_files = {(member, config["channel_sources"][base]["file"]) for member, base in tasks}
+    index_cache: dict[tuple[str, str], list] = {}
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        index_futures = {
+            pool.submit(fetch_index, session,
+                        _variable_url(config, year, init, member, var_file), timeout): (member, var_file)
+            for member, var_file in unique_files
+        }
+        for future in as_completed(index_futures):
+            index_cache[index_futures[future]] = future.result()
+
+    # Phase 2: fetch each base's messages using the cached index.
     paths: dict[tuple[str, str], Path] = {}
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
             pool.submit(fetch_field_raw, session, config, year, init, member, base,
-                        lead_days, timeout, staging): (member, base)
+                        lead_days, timeout, staging, index_cache): (member, base)
             for member, base in tasks
         }
         for future in as_completed(futures):
@@ -301,7 +454,8 @@ def execute_init(session, config, year: int, init: str, members: list[str],
     if decode_pool is not None:
         jobs = {
             decode_pool.submit(_decode_and_crop, base, str(paths[(member, base)]),
-                               lead_days, domain, step): (member, base)
+                               lead_days, domain, step,
+                               config["channel_sources"][base].get("timing", "instant")): (member, base)
             for member, base in tasks
         }
         for job in as_completed(jobs):
@@ -309,10 +463,15 @@ def execute_init(session, config, year: int, init: str, members: list[str],
     else:
         for member, base in tasks:
             fields[(member, base)] = _decode_and_crop(
-                base, str(paths[(member, base)]), lead_days, domain, step)
+                base, str(paths[(member, base)]), lead_days, domain, step,
+                config["channel_sources"][base].get("timing", "instant"))
 
     data_vars: dict[str, xr.DataArray] = {}
-    for base, (target_name, level) in _TARGET_VARIABLE.items():
+    for base, entry in config["channel_sources"].items():
+        # Original channels keep their built-in target name/level; new channels
+        # take a flat name from the config (defaulting to the base name).
+        target_name, level = _TARGET_VARIABLE.get(
+            base, (entry.get("target", base), entry.get("out_level")))
         stacked = xr.concat([fields[(member, base)] for member in members],
                             dim=pd.Index(members, name="member")).expand_dims(run=[init])
         if level is not None:
