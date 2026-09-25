@@ -20,6 +20,7 @@ class GridGraphNet(nn.Module):
         tcn_kernel: int = 3,
         tcn_dilations: tuple[int, ...] = (1, 2),
         dropout: float = 0.1,
+        out_channels: int = 1,
     ):
         super().__init__()
         if tcn_kernel % 2 == 0:
@@ -41,7 +42,7 @@ class GridGraphNet(nn.Module):
             for d in tcn_dilations
         )
         self.temporal_dropout = nn.Dropout(dropout)
-        self.head = nn.Linear(hidden, 1)
+        self.head = nn.Linear(hidden, out_channels)
         self._edge_cache: dict[tuple[int, torch.device], torch.Tensor] = {}
 
     def _batched_edge_index(self, snapshots: int, device: torch.device) -> torch.Tensor:

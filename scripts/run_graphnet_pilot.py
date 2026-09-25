@@ -81,11 +81,11 @@ def build_cache(files: list[str], n_train: int, *, sample_size: int = 300):
     return features, labels, standardizer
 
 
-def load_or_build_cache(files: list[str], n_train: int, reuse: bool):
+def load_or_build_cache(files: list[str], n_train: int, reuse: bool, in_ch: int = N_CHANNELS):
     x_path, y_path = CACHE_DIR / "X.dat", CACHE_DIR / "Y.dat"
-    expected = len(files) * 9 * 66 * 70 * N_CHANNELS * 4
+    expected = len(files) * 9 * 66 * 70 * in_ch * 4
     if reuse and x_path.exists() and y_path.exists() and x_path.stat().st_size == expected:
-        features = np.memmap(x_path, np.float32, "r", shape=(len(files), 9, 66, 70, N_CHANNELS))
+        features = np.memmap(x_path, np.float32, "r", shape=(len(files), 9, 66, 70, in_ch))
         labels = np.memmap(y_path, np.float32, "r", shape=(len(files), 9, 66, 70, 1))
         npz = CACHE_DIR / "standardizer.npz"
         if npz.exists():
@@ -94,8 +94,12 @@ def load_or_build_cache(files: list[str], n_train: int, reuse: bool):
         else:
             standardizer = _fit_standardizer(files[:n_train])
             np.savez(npz, mean=standardizer.mean, std=standardizer.std)
-        print(f"reusing cache ({len(files)} dates)", flush=True)
+        print(f"reusing cache ({len(files)} dates, {in_ch} channels)", flush=True)
         return features, labels, standardizer
+    if in_ch != N_CHANNELS:
+        raise SystemExit(
+            f"--in-channels {in_ch} needs a pre-built cache at {CACHE_DIR} (use --reuse-cache); "
+            "the in-script builder only produces the 19-channel set.")
     return build_cache(files, n_train)
 
 
@@ -131,15 +135,21 @@ def main() -> None:
     parser.add_argument("--init-encoder", type=str, default=None, help="Pretrained encoder state_dict to load.")
     parser.add_argument("--freeze-encoder", action="store_true", help="Train only the head (freeze encoder).")
     parser.add_argument("--out", type=str, default=None)
+    parser.add_argument("--in-channels", type=int, default=None,
+                        help="Override channel count (for a pre-built richer cache); default 19.")
+    parser.add_argument("--forecast-root", type=str, default=None,
+                        help="Override the forecast .nc directory (e.g. the multivar store).")
     args = parser.parse_args()
 
     years = _parse_years(args)
     out_path = Path(args.out) if args.out else (
         PROJECT_ROOT / "outputs" / f"graphnet_pilot_{years[0]}_{years[-1]}.pt")
 
+    in_ch = args.in_channels or N_CHANNELS
+    forecast_root = Path(args.forecast_root) if args.forecast_root else FORECAST_ROOT
     files: list[str] = []
     for year in years:
-        files += glob.glob(str(FORECAST_ROOT / f"{year}*.nc"))
+        files += glob.glob(str(forecast_root / f"{year}*.nc"))
     files = sorted(files)
     if args.limit:
         files = files[:args.limit]
@@ -152,7 +162,7 @@ def main() -> None:
         n_train = len(files) - 1
     print(f"{len(files)} init dates from {years} | train {n_train} val {len(files) - n_train}", flush=True)
 
-    features, labels, standardizer = load_or_build_cache(files, n_train, args.reuse_cache)
+    features, labels, standardizer = load_or_build_cache(files, n_train, args.reuse_cache, in_ch)
 
     train_labels = np.asarray(labels[:n_train])
     pos = float((train_labels == 1).sum())
@@ -163,10 +173,10 @@ def main() -> None:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     if args.model == "multimesh":
         model = MultiMeshGraphNet(build_multi_mesh(n_levels=args.mesh_levels),
-                                  in_channels=N_CHANNELS, hidden=args.hidden,
+                                  in_channels=in_ch, hidden=args.hidden,
                                   processor_layers=args.processor_layers)
     else:
-        model = GridGraphNet(build_grid_graph(), in_channels=N_CHANNELS, hidden=args.hidden)
+        model = GridGraphNet(build_grid_graph(), in_channels=in_ch, hidden=args.hidden)
     model = model.to(device)
     if args.init_encoder:
         state = torch.load(PROJECT_ROOT / args.init_encoder, map_location=device)
@@ -227,7 +237,7 @@ def main() -> None:
             best_ap, best_epoch, since_improve = ap, epoch, 0
             torch.save({
                 "model_state": model.state_dict(), "model": args.model,
-                "hidden": args.hidden, "in_channels": N_CHANNELS,
+                "hidden": args.hidden, "in_channels": in_ch,
                 "mesh_levels": args.mesh_levels, "processor_layers": args.processor_layers,
                 "standardizer_mean": standardizer.mean, "standardizer_std": standardizer.std,
                 "years": years, "val_pr_auc": best_ap, "epoch": epoch,

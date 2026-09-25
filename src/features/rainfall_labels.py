@@ -53,3 +53,29 @@ def build_bust_labels(
         valid = np.isfinite(probability) & np.isfinite(obs)
         labels.append(np.where(valid, (miss | false_alarm).astype(np.float32), np.nan))
     return np.stack(labels).astype(np.float32)
+
+
+def build_directional_bust_labels(
+    forecast: xr.Dataset, obs_grid: xr.DataArray,
+    *, threshold: float = HEAVY_THRESHOLD_MM,
+    miss_below: float = MISS_BELOW, false_alarm_at: float = FALSE_ALARM_AT,
+) -> np.ndarray:
+    """Two-channel per-cell labels [lead, lat, lon, 2]: channel 0 = miss
+    (underprediction), channel 1 = false alarm (overprediction). NaN where the
+    observation is invalid, so both channels share one mask."""
+    init_str = str(forecast["run"].values[0])
+    precip = forecast["total_precipitation"].isel(run=0)
+    leads = forecast["lead"].values
+    observed = _obs_for_init(obs_grid, init_str, leads)
+
+    out = []
+    for lead in leads:
+        probability = ensemble_exceedance_probability(precip.sel(lead=lead).values, threshold)
+        obs = observed.sel(lead=lead).values
+        miss, false_alarm, _ = event_error_masks(
+            probability, obs, threshold, miss_below, false_alarm_at)
+        valid = np.isfinite(probability) & np.isfinite(obs)
+        m = np.where(valid, miss.astype(np.float32), np.nan)
+        fa = np.where(valid, false_alarm.astype(np.float32), np.nan)
+        out.append(np.stack([m, fa], axis=-1))
+    return np.stack(out).astype(np.float32)
