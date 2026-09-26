@@ -7,17 +7,31 @@ import plotly.graph_objects as go
 import streamlit as st
 
 
+<<<<<<< HEAD
+PLOT_COLUMNS = {"lead_day"}
+=======
 PLOT_COLUMNS = {"lead_day", "overall_bust_probability"}
+>>>>>>> origin/main
 
 
 def build_lead_probability_figure(
     probability_data: pd.DataFrame | None,
+<<<<<<< HEAD
+    *,
+    probability_column: str = "overall_bust_probability",
+=======
+>>>>>>> origin/main
 ) -> go.Figure:
     """Build the Day 1–10 chart without manufacturing unavailable values."""
     figure = go.Figure()
 
     if probability_data is not None and not probability_data.empty:
+<<<<<<< HEAD
+        required = PLOT_COLUMNS | {probability_column}
+        missing = required.difference(probability_data.columns)
+=======
         missing = PLOT_COLUMNS.difference(probability_data.columns)
+>>>>>>> origin/main
         if missing:
             raise ValueError(
                 f"Probability data is missing required columns: {sorted(missing)}"
@@ -25,6 +39,13 @@ def build_lead_probability_figure(
 
         frame = probability_data.copy()
         frame["lead_day"] = pd.to_numeric(frame["lead_day"], errors="coerce")
+<<<<<<< HEAD
+        frame[probability_column] = pd.to_numeric(frame[probability_column], errors="coerce")
+        frame = frame.dropna(subset=list(required))
+        frame = frame[
+            frame["lead_day"].between(1, 10)
+            & frame[probability_column].between(0, 1)
+=======
         frame["overall_bust_probability"] = pd.to_numeric(
             frame["overall_bust_probability"], errors="coerce"
         )
@@ -32,16 +53,25 @@ def build_lead_probability_figure(
         frame = frame[
             frame["lead_day"].between(1, 10)
             & frame["overall_bust_probability"].between(0, 1)
+>>>>>>> origin/main
         ]
 
         if not frame.empty:
             lead_summary = (
+<<<<<<< HEAD
+                frame.groupby("lead_day", as_index=False)[probability_column]
+=======
                 frame.groupby("lead_day", as_index=False)["overall_bust_probability"]
+>>>>>>> origin/main
                 .mean()
                 .sort_values("lead_day")
             )
             lead_summary["probability_percent"] = (
+<<<<<<< HEAD
+                lead_summary[probability_column] * 100
+=======
                 lead_summary["overall_bust_probability"] * 100
+>>>>>>> origin/main
             )
             figure.add_trace(
                 go.Scatter(
@@ -49,10 +79,17 @@ def build_lead_probability_figure(
                     y=lead_summary["probability_percent"],
                     mode="lines+markers",
                     name="Mean grid-cell probability",
+<<<<<<< HEAD
+                    line={"color": "#ba643b", "width": 3},
+                    marker={
+                        "color": "#fffefa",
+                        "line": {"color": "#ba643b", "width": 2},
+=======
                     line={"color": "#dc4c51", "width": 3},
                     marker={
                         "color": "#ffffff",
                         "line": {"color": "#dc4c51", "width": 2},
+>>>>>>> origin/main
                         "size": 8,
                     },
                     hovertemplate="Day %{x}<br>%{y:.1f}%<extra></extra>",
@@ -65,8 +102,13 @@ def build_lead_probability_figure(
             x=5.5,
             y=50,
             showarrow=False,
+<<<<<<< HEAD
+            font={"color": "#63737d", "size": 14},
+            bgcolor="rgba(255,254,250,0.92)",
+=======
             font={"color": "#63748b", "size": 14},
             bgcolor="rgba(255,255,255,0.86)",
+>>>>>>> origin/main
             borderpad=8,
         )
 
@@ -74,25 +116,42 @@ def build_lead_probability_figure(
         height=285,
         margin={"l": 48, "r": 18, "t": 15, "b": 42},
         paper_bgcolor="rgba(0,0,0,0)",
+<<<<<<< HEAD
+        plot_bgcolor="#fffefa",
+        hovermode="x unified",
+        showlegend=False,
+        font={"family": "Segoe UI, Arial, sans-serif", "color": "#63737d"},
+=======
         plot_bgcolor="#ffffff",
         hovermode="x unified",
         showlegend=False,
         font={"family": "Segoe UI, Arial, sans-serif", "color": "#63748b"},
+>>>>>>> origin/main
         xaxis={
             "title": "Forecast lead day",
             "range": [0.7, 10.3],
             "tickmode": "linear",
             "dtick": 1,
+<<<<<<< HEAD
+            "gridcolor": "#e7ebe5",
+            "linecolor": "#d8dedb",
+=======
             "gridcolor": "#edf1f6",
             "linecolor": "#dce3ec",
+>>>>>>> origin/main
             "fixedrange": False,
         },
         yaxis={
             "title": "Bust probability (%)",
             "range": [0, 100],
             "dtick": 20,
+<<<<<<< HEAD
+            "gridcolor": "#e7ebe5",
+            "linecolor": "#d8dedb",
+=======
             "gridcolor": "#edf1f6",
             "linecolor": "#dce3ec",
+>>>>>>> origin/main
             "ticksuffix": "%",
             "fixedrange": False,
         },
@@ -102,10 +161,21 @@ def build_lead_probability_figure(
 
 def render_lead_probability_chart(
     probability_data: pd.DataFrame | None,
+<<<<<<< HEAD
+    *,
+    probability_column: str = "overall_bust_probability",
+) -> None:
+    """Render the Plotly chart with a compact dashboard toolbar."""
+    st.plotly_chart(
+        build_lead_probability_figure(
+            probability_data, probability_column=probability_column
+        ),
+=======
 ) -> None:
     """Render the Plotly chart with a compact dashboard toolbar."""
     st.plotly_chart(
         build_lead_probability_figure(probability_data),
+>>>>>>> origin/main
         width="stretch",
         config={
             "displaylogo": False,
