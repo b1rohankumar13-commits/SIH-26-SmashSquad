@@ -8,7 +8,7 @@ import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartToo
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatInit, formatValidShort, oneIn, pct } from "@/lib/format";
 import { atIntensity, inBox, pctLabel, rampColour, rgba, SHOW_FROM, splitRates, type Cell, type Scale, type Thresholds } from "@/lib/risk";
-import type { CaseStudy, Direction, Hazard, LeadRow, Mode, Scores } from "@/lib/types";
+import type { CaseStudy, Direction, ExplainedArea, Explanation, Hazard, LeadRow, Mode, Scores } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export function DirectionBadge({ direction }: { direction: Direction }) {
@@ -235,6 +235,61 @@ export function SkillCard({ hazard, labels, cuts, unit = "cells" }: {
         <p className="pt-3 text-xs text-pretty text-muted-foreground">
           {skill.some(([k]) => SCOPE[k]) && "Each direction is scored only where that bust can happen. "}Brier skill uses a calibration fitted on the other half of the validation period.
         </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Numbered-area label shared by the card and the map markers: M1, M2... for misses, F1... for false alarms. */
+export const areaLabel = (d: Direction, k: number) => `${d === "miss" ? "M" : "F"}${k + 1}`;
+
+const fmtLat = (v: number) => `${Math.abs(v).toFixed(1)}°${v >= 0 ? "N" : "S"}`;
+
+function AreaDrivers({ d, k, a }: { d: Direction; k: number; a: ExplainedArea }) {
+  return (
+    <li className="flex flex-col gap-1.5 py-2.5 first:pt-0 last:pb-0">
+      <div className="flex items-baseline justify-between gap-2 text-sm">
+        <span className="flex items-baseline gap-2">
+          <span className={cn("rounded px-1.5 py-0.5 text-xs font-semibold tabular-nums", d === "miss" ? "bg-miss-soft text-miss" : "bg-fa-soft text-fa")}>
+            {areaLabel(d, k)}
+          </span>
+          <span className="tabular-nums text-muted-foreground">{fmtLat(a.lat)}, {a.lon.toFixed(1)}°E</span>
+        </span>
+        <span className="text-xs tabular-nums text-muted-foreground">{a.cells} cells · ~{a.expected < 10 ? a.expected.toFixed(1) : Math.round(a.expected)} busts expected</span>
+      </div>
+      <ul className="flex flex-col gap-1">
+        {a.drivers.map((r) => (
+          <li key={r.name} className="grid grid-cols-[minmax(0,1fr)_auto_3.5rem] items-center gap-x-2 text-xs">
+            <span className="truncate" title={r.name}>{r.name}</span>
+            <span className="tabular-nums text-muted-foreground">{r.value}</span>
+            <span className="flex items-center gap-1.5 tabular-nums" aria-label={`${Math.round(r.share * 100)}% of the signal`}>
+              <span aria-hidden className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                <span className={cn("block h-full rounded-full", d === "miss" ? "bg-miss" : "bg-fa")} style={{ width: `${Math.round(r.share * 100)}%` }} />
+              </span>
+              <span className="w-7 text-right">{Math.round(r.share * 100)}%</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </li>
+  );
+}
+
+/**
+ * The map's largest flagged areas and what drives each: meteorological inputs ranked by their share
+ * of the push towards a bust (gradient x input), each with its value over the area.
+ */
+export function ExplainCard({ data, mode }: { data?: Explanation; mode: Mode }) {
+  const dirs = (mode === "both" ? ["miss", "false_alarm"] : [mode]) as Direction[];
+  const shown = dirs.filter((d) => data?.[d]?.length);
+  if (!data || !shown.length) return null;
+  return (
+    <Card size="sm">
+      <CardHeader><CardTitle>Why these areas?</CardTitle></CardHeader>
+      <CardContent>
+        <ul className="flex flex-col divide-y">
+          {shown.flatMap((d) => data[d].map((a, k) => <AreaDrivers key={`${d}-${k}`} d={d} k={k} a={a} />))}
+        </ul>
       </CardContent>
     </Card>
   );

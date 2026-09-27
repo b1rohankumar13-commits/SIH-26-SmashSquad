@@ -2,7 +2,7 @@
 
 import useSWR from "swr";
 
-import type { CaseStudy, GridData, Hazard, LeadRow, MonsoonData, Track } from "@/lib/types";
+import type { CaseStudy, Explanation, GridData, Hazard, LeadRow, MonsoonData, Track } from "@/lib/types";
 
 async function fetcher<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -37,3 +37,6 @@ export const useMonsoon = (init?: string) =>
 
 export const useTracks = (date?: string) =>
   useSWR<Track[]>(date ? `/api/tracks?date=${date}` : null, fetcher, opts);
+
+export const useExplain = (hazard?: string, init?: string, lead?: number) =>
+  useSWR<Explanation>(hazard && init && lead ? `/api/explain/${hazard}?init=${init}&lead=${lead}` : null, fetcher, opts);

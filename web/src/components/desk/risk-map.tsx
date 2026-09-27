@@ -1,7 +1,7 @@
 "use client";
 
 import type { PickingInfo } from "@deck.gl/core";
-import { PathLayer, PolygonLayer, ScatterplotLayer } from "@deck.gl/layers";
+import { PathLayer, PolygonLayer, ScatterplotLayer, TextLayer } from "@deck.gl/layers";
 import { MapboxOverlay, type MapboxOverlayProps } from "@deck.gl/mapbox";
 import { setWorkerUrl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -10,7 +10,8 @@ import { useMemo } from "react";
 import { Map, useControl } from "react-map-gl/maplibre";
 
 import { RAMP, rampColour, type Cell } from "@/lib/risk";
-import type { Box, Direction, Mode, Track } from "@/lib/types";
+import { areaLabel } from "@/components/desk/panels";
+import type { Box, Direction, Explanation, Mode, Track } from "@/lib/types";
 
 // Worker served from /public (see scripts/copy-maplibre-worker.mjs).
 setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
@@ -40,7 +41,7 @@ const outcome = (c: Cell) =>
       : "Forecast held";
 
 export function RiskMap({
-  cells, mode, showObserved, box, boxTone, label, tracks,
+  cells, mode, showObserved, box, boxTone, label, tracks, areas,
 }: {
   cells: Cell[] | null;
   mode: Mode;
@@ -50,6 +51,8 @@ export function RiskMap({
   label: string;
   /** Observed low-pressure-system tracks, drawn over the risk cells. */
   tracks?: Track[];
+  /** Explained areas, marked M1/F1... at their centres to match the "Why these areas?" card. */
+  areas?: Explanation;
 }) {
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === "dark";
@@ -79,6 +82,15 @@ export function RiskMap({
         }
       }
     }
+    if (areas && cells) {
+      const marks = ((mode === "both" ? ["miss", "false_alarm"] : [mode]) as Direction[])
+        .flatMap((d) => areas[d].map((a, k) => ({ d, text: areaLabel(d, k), p: [a.lon, a.lat] as [number, number] })));
+      out.push(new TextLayer<(typeof marks)[number]>({
+        id: "area-labels", data: marks, getPosition: (m) => m.p, getText: (m) => m.text,
+        getSize: 11, fontWeight: 700, fontFamily: "system-ui, sans-serif", background: true, backgroundPadding: [4, 2],
+        getBackgroundColor: (m) => (m.d === "miss" ? [194, 65, 12, 235] : [29, 78, 216, 235]), getColor: [255, 255, 255, 255],
+      }));
+    }
     if (tracks?.length) {
       const ink: [number, number, number] = dark ? [250, 250, 250] : [23, 23, 23];
       out.push(new PathLayer<Track>({
@@ -101,7 +113,7 @@ export function RiskMap({
       }));
     }
     return out;
-  }, [cells, mode, showObserved, box, boxTone, dark, tracks]);
+  }, [cells, mode, showObserved, box, boxTone, dark, tracks, areas]);
 
   const tooltip = ({ object }: PickingInfo) => {
     const c = object as Cell | undefined;

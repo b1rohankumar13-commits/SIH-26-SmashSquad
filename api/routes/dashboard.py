@@ -147,6 +147,21 @@ def tracks(date: str = Query(..., pattern=r"^\d{8}$"), window: int = Query(3, ge
     return out
 
 
+@lru_cache(maxsize=4)
+def _explain(hazard: str) -> dict:
+    path = EXPORT_DIR / hazard / "explain.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
+@router.get("/explain/{hazard}")
+def explain(hazard: str, init: str = Query(..., pattern=r"^\d{8}$"), lead: int = Query(..., ge=1, le=9)) -> dict:
+    """Top flagged areas per direction for one map, with their meteorological drivers
+    (from scripts/export_explanations.py). Empty lists where nothing is flagged."""
+    _hazard(hazard)
+    per = _explain(hazard).get(init, {}).get(str(lead), {})
+    return {"miss": per.get("miss", []), "false_alarm": per.get("false_alarm", [])}
+
+
 @router.get("/cases")
 def cases() -> list[dict]:
     spec = importlib.util.spec_from_file_location("case_studies", CASES_FILE)

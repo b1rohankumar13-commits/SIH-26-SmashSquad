@@ -7,11 +7,11 @@ import { useEffect, useMemo } from "react";
 import { AppShell } from "@/components/app-shell";
 import { CasePicker, DeskControls } from "@/components/desk/controls";
 import { MonsoonView } from "@/components/desk/monsoon-view";
-import { CaseCard, GridMetrics, LeadChart, MapLegend, MetricsSkeleton, ModelFacts, SkillCard } from "@/components/desk/panels";
+import { CaseCard, ExplainCard, GridMetrics, LeadChart, MapLegend, MetricsSkeleton, ModelFacts, SkillCard } from "@/components/desk/panels";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useCases, useGrid, useHazards, useInits, useLeads, useMonsoon, useTracks } from "@/lib/api";
+import { useCases, useExplain, useGrid, useHazards, useInits, useLeads, useMonsoon, useTracks } from "@/lib/api";
 import { EVENT_WORD, formatInit, formatValid, oneIn, validDate, ymd } from "@/lib/format";
 import { atIntensity, classify, scaleFor, SHOW_FROM, type Scale, type Thresholds } from "@/lib/risk";
 import type { CaseStudy } from "@/lib/types";
@@ -75,6 +75,7 @@ export function Desk() {
 
   const event = EVENT_WORD[hazard?.id ?? "rain"] ?? "event";
   const shift = hazard?.valid_shift;
+  const explain = useExplain(hazard?.kind === "grid" ? hazard.id : undefined, init, state.lead);
   const tracks = useTracks(hazard?.id === "lps" && init ? ymd(validDate(init, state.lead, shift)) : undefined);
   const error = hazards.error ?? inits.error ?? grid.error ?? monsoon.error;
 
@@ -118,12 +119,13 @@ export function Desk() {
                     <RiskMap
                       cells={cells} mode={mode} showObserved={state.observed}
                       tracks={hazard.id === "lps" && state.observed ? tracks.data : undefined}
-                      box={activeCase?.box} boxTone={activeCase?.mode}
+                      box={activeCase?.box} boxTone={activeCase?.mode} areas={explain.data}
                       label={cells ? `${hazard.label} bust-risk map for ${formatValid(init!, state.lead, shift)}: ${cells.filter((c) => c.missFlag).length} cells flagged for a likely miss, ${cells.filter((c) => c.faFlag).length} for a likely false alarm.` : "Loading map"}
                     />
                   </CardContent>
                 </Card>
                 <div className="flex flex-col gap-4">
+                  <ExplainCard data={explain.data} mode={mode} />
                   {scales && <MapLegend scales={scales} mode={mode} event={event} showObserved={state.observed}
                     showTracks={hazard.id === "lps" && state.observed} />}
                   <ModelFacts hazard={hazard} falseAlarmNote={hazard.id === "rain"

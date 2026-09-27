@@ -73,6 +73,20 @@ export interface Hazard {
   valid_shift?: number;
 }
 
+/** A flagged area on one map and the drivers that push its risk up (gradient x input, see export_explanations.py). */
+export interface ExplainedArea {
+  lat: number;
+  lon: number;
+  cells: number;
+  /** Sum of the calibrated bust probability over the area's cells. */
+  expected: number;
+  /** [south, north, west, east] */
+  box: [number, number, number, number];
+  drivers: { name: string; share: number; value: string }[];
+}
+
+export type Explanation = Record<Direction, ExplainedArea[]>;
+
 /** An observed (ERA5) low-pressure-system track near the valid date; points are [lon, lat]. */
 export interface Track {
   track: number;
