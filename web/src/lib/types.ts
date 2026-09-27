@@ -73,12 +73,6 @@ export interface Hazard {
   valid_shift?: number;
 }
 
-/** One GEFS member's forecast storm track; points are [lead, lat, lon]. */
-export interface GefsTrack {
-  member: number;
-  points: [number, number, number][];
-}
-
 /** An observed (ERA5) low-pressure-system track near the valid date; points are [lon, lat]. */
 export interface Track {
   track: number;

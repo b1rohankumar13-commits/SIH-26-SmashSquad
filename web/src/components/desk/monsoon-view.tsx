@@ -73,7 +73,7 @@ export function MonsoonView({ hazard, data, lead, showObserved }: { hazard: Haza
             <Badge variant="outline">Regional</Badge>
           </CardHeader>
           <CardContent>
-            <RiskMap cells={null} mode="both" showObserved={false} showGefs={false} box={MCZ}
+            <RiskMap cells={null} mode="both" showObserved={false} box={MCZ}
               boxTone={worst && worst.lv > 0 ? dirOf(worst.t) : "neutral"}
               label={`Monsoon core zone, day ${lead}: strongest alert ${worst ? `${LEVEL[worst.lv]} for ${TARGET_LABELS[worst.t]}` : "none"}.`} />
           </CardContent>

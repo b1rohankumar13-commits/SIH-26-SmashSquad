@@ -11,7 +11,6 @@ export interface DeskState {
   init?: string;
   lead: number;
   observed: boolean;
-  gefs: boolean;
   caseId?: string;
 }
 
@@ -32,7 +31,6 @@ export function useDeskState() {
     init: params.get("init") ?? undefined,
     lead: Number.isInteger(lead) && lead >= 1 && lead <= 9 ? lead : 1,
     observed: params.get("observed") !== "0",
-    gefs: params.get("gefs") === "1",
     caseId: params.get("case") ?? undefined,
   };
 
@@ -45,10 +43,9 @@ export function useDeskState() {
       if ("init" in patch) set("init", patch.init);
       if ("lead" in patch) set("lead", patch.lead === 1 ? undefined : String(patch.lead));
       if ("observed" in patch) set("observed", patch.observed ? undefined : "0");
-      if ("gefs" in patch) set("gefs", patch.gefs ? "1" : undefined);
       // Hazard/date/lead/direction changes leave a case study unless the patch sets one;
       // overlay toggles keep it.
-      const display = Object.keys(patch).every((k) => ["observed", "gefs"].includes(k));
+      const display = Object.keys(patch).every((k) => k === "observed");
       if (!display || "caseId" in patch) set("case", "caseId" in patch ? patch.caseId : undefined);
       const url = `${pathname}?${next.toString()}`;
       startTransition(() => (push ? router.push(url, { scroll: false }) : router.replace(url, { scroll: false })));

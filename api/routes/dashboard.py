@@ -147,18 +147,6 @@ def tracks(date: str = Query(..., pattern=r"^\d{8}$"), window: int = Query(3, ge
     return out
 
 
-@lru_cache(maxsize=1)
-def _gefs_tracks() -> dict[str, list]:
-    path = EXPORT_DIR / "lps" / "gefs_tracks.json"
-    return json.loads(path.read_text()) if path.exists() else {}
-
-
-@router.get("/gefs_tracks")
-def gefs_tracks(init: str = Query(..., pattern=r"^\d{8}$")) -> list[dict]:
-    """Each GEFS member's forecast storm tracks for one issue date; points are [lead, lat, lon]."""
-    return _gefs_tracks().get(init, [])
-
-
 @router.get("/cases")
 def cases() -> list[dict]:
     spec = importlib.util.spec_from_file_location("case_studies", CASES_FILE)

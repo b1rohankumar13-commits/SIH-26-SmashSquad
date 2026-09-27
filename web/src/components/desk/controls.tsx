@@ -54,7 +54,7 @@ export function DeskControls({ hazards, hazard, state, inits, notable, update }:
   notable: string[];
   update: (p: Partial<DeskState>, o?: { push?: boolean }) => void;
 }) {
-  const ids = { hazard: useId(), init: useId(), obs: useId(), gefs: useId() };
+  const ids = { hazard: useId(), init: useId(), obs: useId() };
   const others = inits.filter((i) => !notable.includes(i));
   const initItems = Object.fromEntries(inits.map((i) => [i, formatInit(i)]));
   return (
@@ -132,10 +132,6 @@ export function DeskControls({ hazards, hazard, state, inits, notable, update }:
         <label htmlFor={ids.obs} className="flex cursor-pointer items-center gap-2 text-sm">
           <Switch id={ids.obs} checked={state.observed} onCheckedChange={(v) => update({ observed: v })} />
           Show what actually happened
-        </label>
-        <label htmlFor={ids.gefs} className={`flex items-center gap-2 text-sm ${hazard.kind === "grid" ? "cursor-pointer" : "opacity-50"}`}>
-          <Switch id={ids.gefs} checked={state.gefs} disabled={hazard.kind !== "grid"} onCheckedChange={(v) => update({ gefs: v })} />
-          Show GEFS event probability
         </label>
       </div>
     </div>

@@ -68,10 +68,6 @@ export function GridMetrics({ cells, thresholds, event, validLabel }: { cells: C
   );
 }
 
-function Swatch({ colour }: { colour: readonly number[] }) {
-  return <span aria-hidden className="mt-0.5 size-3.5 shrink-0 rounded-[4px]" style={{ background: rgba(colour) }} />;
-}
-
 /** Observed-bust ring; theme tokens keep it visible on light and dark cards. */
 function RingSwatch({ direction }: { direction: Direction }) {
   return <span aria-hidden className={cn("mt-0.5 size-3.5 shrink-0 rounded-full border-2", direction === "miss" ? "border-miss" : "border-fa")} />;
@@ -82,9 +78,9 @@ function Ramp({ direction }: { direction: Direction }) {
   return <span aria-hidden className="mt-1 h-3 w-full rounded-full ring-1 ring-foreground/10" style={{ background: `linear-gradient(90deg, ${stops.join(", ")})` }} />;
 }
 
-export function MapLegend({ scales, mode, event, showObserved, showGefs, showTracks, showGefsTracks }: {
-  scales: Record<Direction, Scale>; mode: Mode; event: string; showObserved: boolean; showGefs: boolean;
-  showTracks?: boolean; showGefsTracks?: boolean;
+export function MapLegend({ scales, mode, event, showObserved, showTracks }: {
+  scales: Record<Direction, Scale>; mode: Mode; event: string; showObserved: boolean;
+  showTracks?: boolean;
 }) {
   const dirs = (mode === "both" ? ["miss", "false_alarm"] : [mode]) as Direction[];
   return (
@@ -125,26 +121,6 @@ export function MapLegend({ scales, mode, event, showObserved, showGefs, showTra
               <div className="flex flex-col gap-0.5">
                 <span className="font-medium">Observed system</span>
                 <span className="text-muted-foreground">Track from ERA5 (3 days either side); the ring is its position on the valid date.</span>
-              </div>
-            </li>
-          )}
-          {showGefsTracks && (
-            <li className="flex gap-3 py-2.5">
-              <span aria-hidden className="mt-1.5 flex h-0.5 w-3.5 shrink-0 items-center rounded-full bg-teal-600 dark:bg-teal-400">
-                <span className="mx-auto size-1.5 rounded-full bg-teal-600 dark:bg-teal-400" />
-              </span>
-              <div className="flex flex-col gap-0.5">
-                <span className="font-medium">GEFS forecast tracks</span>
-                <span className="text-muted-foreground">One line per member&apos;s forecast system; dots are where each member puts it on the valid date.</span>
-              </div>
-            </li>
-          )}
-          {showGefs && (
-            <li className="flex gap-3 py-2.5">
-              <Swatch colour={[20, 184, 166, 170]} />
-              <div className="flex flex-col gap-0.5">
-                <span className="font-medium">GEFS event probability</span>
-                <span className="text-muted-foreground">Darker = more of the 5 members forecast {event}.</span>
               </div>
             </li>
           )}

@@ -7,7 +7,7 @@ arrays to outputs/dashboard/<hazard>/ plus an index.json the dashboard reads:
   heatwave   GNN+CNN 4-checkpoint average (heatwave_{gnn,cnn}_fair_s{0,1}.pt), val Mar-Jun 2008-2009
   monsoon    active/break GNN wide head (active_break_gnn_wide.pt), JJAS 2008-2009, MCZ-level
   lps        low-pressure-system strike GNNs, 20 years: average of lps_gnn20.pt and lps_gnn20env.pt
-             (+ MJO/climatology channels), val 2016-2019, + ERA5 tracks.json and GEFS gefs_tracks.json
+             (+ MJO/climatology channels), val 2016-2019, + ERA5 tracks.json
 
 Per-cell hazards (rain, heatwave), arrays [n_init, lead, lat, lon]:
   p_miss.npy, p_fa.npy       float16 model probabilities
@@ -261,27 +261,6 @@ def export_lps_tracks(inits: list[str]) -> None:
     (OUT / "lps" / "tracks.json").write_text(json.dumps({k: sorted(v) for k, v in tracks.items()}))
 
 
-def export_gefs_tracks(inits: list[str], dets: Path = PROJECT_ROOT / "data" / "processed" / "gefs_lps_dets_20yr.npz") -> None:
-    """Each GEFS member's forecast storm tracks per init (tracker detections linked across lead days),
-    for the map: {init: [{member, points: [[lead, lat, lon], ...]}]}. From extract_gefs_lps.py."""
-    from src.detection.lps_tracker import Detection, link_tracks
-    if not dets.exists():
-        print(f"  no {dets.name}; skipping GEFS tracks", flush=True)
-        return
-    z = np.load(dets)
-    want = set(inits)
-    by_init: dict[str, dict[int, list]] = {}
-    for i, m, L, la, lo, ze in zip(z["init"], z["member"], z["lead"], z["lat"], z["lon"], z["zeta"]):
-        if i in want:
-            by_init.setdefault(str(i), {}).setdefault(int(m), []).append(Detection(int(L), float(la), float(lo), float(ze), 0.0))
-    out = {init: [{"member": m, "points": [[d.t, d.lat, d.lon] for d in tr]}
-                  for m, ds in members.items() for tr in link_tracks(ds)]
-           for init, members in by_init.items()}
-    (OUT / "lps").mkdir(parents=True, exist_ok=True)
-    (OUT / "lps" / "gefs_tracks.json").write_text(json.dumps(out, separators=(",", ":")))
-    print(f"  GEFS tracks for {len(out)} inits", flush=True)
-
-
 def export_lps() -> dict:
     from scripts.train_heatwave import HeatwaveBustNet
     meta, rich, Xl, va = lps_inputs()
@@ -302,7 +281,6 @@ def export_lps() -> dict:
     obs_m, obs_f = as_obs(Y[va][..., 0]), as_obs(Y[va][..., 1])
     save("lps", p_miss=P[..., 0], p_fa=P[..., 1], obs_miss=obs_m, obs_fa=obs_f, ens_prob=Pens[va].astype(np.float16))
     export_lps_tracks(inits)
-    export_gefs_tracks(inits)
     fin = obs_m >= 0
     return {"label": "Low-pressure systems", "kind": "grid", "inits": inits,
             "event": "a low-pressure system (depression or stronger) passing within 300 km",
@@ -568,8 +546,6 @@ def main():
         recompute_tiers(); return
     if "--skill-only" in sys.argv:
         build_skill(); return
-    if "--gefs-tracks-only" in sys.argv:
-        export_gefs_tracks(json.loads((OUT / "index.json").read_text())["lps"]["inits"]); return
     # --only lps,heatwave re-exports just those hazards into the existing index
     only = sys.argv[sys.argv.index("--only") + 1].split(",") if "--only" in sys.argv else None
     t0 = time.time()

@@ -11,7 +11,7 @@ import { CaseCard, GridMetrics, LeadChart, MapLegend, MetricsSkeleton, ModelFact
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useCases, useGefsTracks, useGrid, useHazards, useInits, useLeads, useMonsoon, useTracks } from "@/lib/api";
+import { useCases, useGrid, useHazards, useInits, useLeads, useMonsoon, useTracks } from "@/lib/api";
 import { EVENT_WORD, formatInit, formatValid, oneIn, validDate, ymd } from "@/lib/format";
 import { atIntensity, classify, scaleFor, SHOW_FROM, type Scale, type Thresholds } from "@/lib/risk";
 import type { CaseStudy } from "@/lib/types";
@@ -75,7 +75,6 @@ export function Desk() {
 
   const event = EVENT_WORD[hazard?.id ?? "rain"] ?? "event";
   const shift = hazard?.valid_shift;
-  const gefsTracks = useGefsTracks(hazard?.id === "lps" && state.gefs ? init : undefined);
   const tracks = useTracks(hazard?.id === "lps" && init ? ymd(validDate(init, state.lead, shift)) : undefined);
   const error = hazards.error ?? inits.error ?? grid.error ?? monsoon.error;
 
@@ -117,17 +116,16 @@ export function Desk() {
                   </CardHeader>
                   <CardContent>
                     <RiskMap
-                      cells={cells} mode={mode} showObserved={state.observed} showGefs={state.gefs}
+                      cells={cells} mode={mode} showObserved={state.observed}
                       tracks={hazard.id === "lps" && state.observed ? tracks.data : undefined}
-                      gefsTracks={hazard.id === "lps" && state.gefs ? gefsTracks.data : undefined} lead={state.lead}
                       box={activeCase?.box} boxTone={activeCase?.mode}
                       label={cells ? `${hazard.label} bust-risk map for ${formatValid(init!, state.lead, shift)}: ${cells.filter((c) => c.missFlag).length} cells flagged for a likely miss, ${cells.filter((c) => c.faFlag).length} for a likely false alarm.` : "Loading map"}
                     />
                   </CardContent>
                 </Card>
                 <div className="flex flex-col gap-4">
-                  {scales && <MapLegend scales={scales} mode={mode} event={event} showObserved={state.observed} showGefs={state.gefs}
-                    showTracks={hazard.id === "lps" && state.observed} showGefsTracks={hazard.id === "lps" && state.gefs} />}
+                  {scales && <MapLegend scales={scales} mode={mode} event={event} showObserved={state.observed}
+                    showTracks={hazard.id === "lps" && state.observed} />}
                   <ModelFacts hazard={hazard} falseAlarmNote={hazard.id === "rain"
                     ? `False alarms are largely visible in GEFS itself: when most members call ${event}, it doesn’t happen about ${oneIn(hazard.tiers.false_alarm.high.precision)} times. The model’s value is mainly on misses — events GEFS gave no warning of.`
                     : undefined} />
