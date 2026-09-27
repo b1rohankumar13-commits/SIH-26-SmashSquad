@@ -67,7 +67,7 @@ def hazards() -> list[dict]:
         meta = {k: v for k, v in h.items() if k != "inits"}
         out.append({"id": key, "n_inits": len(h["inits"]), "first_init": h["inits"][0],
                     "last_init": h["inits"][-1], **meta})
-    order = {"rain": 0, "heatwave": 1, "monsoon": 2}
+    order = {"rain": 0, "heatwave": 1, "lps": 2, "monsoon": 3}
     return sorted(out, key=lambda m: order.get(m["id"], 9))
 
 
@@ -124,10 +124,45 @@ def monsoon(init: str = Query(..., pattern=r"^\d{8}$")) -> dict:
             "p_active": _round(a["p_active"][k]), "p_break": _round(a["p_break"][k])}
 
 
+@lru_cache(maxsize=1)
+def _tracks() -> dict[str, list]:
+    path = EXPORT_DIR / "lps" / "tracks.json"
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
+@router.get("/tracks")
+def tracks(date: str = Query(..., pattern=r"^\d{8}$"), window: int = Query(3, ge=0, le=10)) -> list[dict]:
+    """ERA5 low-pressure-system tracks active on `date`: each track's fixes within +-window
+    days (lat/lon/date) plus its position on the day itself."""
+    lo = (np.datetime64(f"{date[:4]}-{date[4:6]}-{date[6:]}") - window).astype(str).replace("-", "")
+    hi = (np.datetime64(f"{date[:4]}-{date[4:6]}-{date[6:]}") + window).astype(str).replace("-", "")
+    out = []
+    for tid, fixes in _tracks().items():
+        now = [f for f in fixes if f[0] == date]
+        if not now:
+            continue
+        near = [f for f in fixes if lo <= f[0] <= hi]
+        out.append({"track": int(tid), "path": [[f[2], f[1]] for f in near], "dates": [f[0] for f in near],
+                    "now": [now[0][2], now[0][1]], "first": fixes[0][0], "last": fixes[-1][0]})
+    return out
+
+
+@lru_cache(maxsize=1)
+def _gefs_tracks() -> dict[str, list]:
+    path = EXPORT_DIR / "lps" / "gefs_tracks.json"
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
+@router.get("/gefs_tracks")
+def gefs_tracks(init: str = Query(..., pattern=r"^\d{8}$")) -> list[dict]:
+    """Each GEFS member's forecast storm tracks for one issue date; points are [lead, lat, lon]."""
+    return _gefs_tracks().get(init, [])
+
+
 @router.get("/cases")
 def cases() -> list[dict]:
     spec = importlib.util.spec_from_file_location("case_studies", CASES_FILE)
     mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
     idx = _index()
-    return [{"id": k, **c} for k, c in mod.CASES.items()
+    return [{"id": k, **c, "valid_shift": idx[c["hazard"]].get("valid_shift", -1)} for k, c in mod.CASES.items()
             if c["hazard"] in idx and c["init"] in idx[c["hazard"]]["inits"]]

@@ -37,4 +37,29 @@ CASES = {
         "story": ("The opposite failure: forecast issued on 26 April 2009 for 29 April. GEFS called a "
                   "widespread heatwave over central and west India — most of it never arrived."),
     },
+    # Low-pressure-system leads verify at 00 UTC on init + lead, so lead 7 is 7 days ahead.
+    # Storm model validation years are 2016-2019 (trained on 2000-2015).
+    "ockhi_2017_d7": {
+        "title": "Cyclone Ockhi, Nov 2017 · 7 days ahead",
+        "hazard": "lps", "init": "20171123", "lead": 7, "mode": "miss",
+        "region": "south-west Bay & Comorin", "box": {"south": 4.5, "north": 10.5, "west": 74.5, "east": 81.0},
+        "story": ("Ockhi formed off Sri Lanka and intensified fast as it swept past the southern tip of India "
+                  "into the Arabian Sea, catching hundreds of fishing boats at sea. In this forecast, issued "
+                  "23 November for 30 November, not one GEFS member had a system there."),
+    },
+    "fani_2019_d7": {
+        "title": "Cyclone Fani, Apr 2019 · 7 days ahead",
+        "hazard": "lps", "init": "20190422", "lead": 7, "mode": "miss",
+        "region": "south Bay of Bengal", "box": {"south": 5.5, "north": 12.0, "west": 85.0, "east": 90.0},
+        "story": ("Fani became an extremely severe cyclone and struck Odisha on 3 May 2019. This forecast "
+                  "was issued on 22 April, before Fani had formed, for 29 April, the day our tracker first "
+                  "finds it in the south Bay. GEFS had nothing there."),
+    },
+    "bulbul_2019_d4": {
+        "title": "Cyclone Bulbul, Nov 2019 · 4 days ahead",
+        "hazard": "lps", "init": "20191103", "lead": 4, "mode": "miss",
+        "region": "central Bay of Bengal", "box": {"south": 11.5, "north": 18.0, "west": 86.0, "east": 93.0},
+        "story": ("Bulbul tracked north through the Bay to hit West Bengal and Bangladesh on 9 November 2019. "
+                  "Issued 3 November for 7 November, GEFS showed no system over the central Bay."),
+    },
 }
