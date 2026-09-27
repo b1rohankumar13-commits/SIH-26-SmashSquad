@@ -90,6 +90,7 @@ def main():
     ap.add_argument("--tune", action="store_true")
     ap.add_argument("--zeta-min", type=float, default=None)
     ap.add_argument("--deficit-min", type=float, default=None)
+    ap.add_argument("--out", type=Path, default=OUT, help="e.g. data/processed/lps_truth_20yr.npz")
     args = ap.parse_args()
     times, u, v, msl, (lats, lons) = load_era5_on_grid()
     mask = centre_mask(lats, lons, orography_on_grid(lats, lons))
@@ -114,15 +115,16 @@ def main():
     s = score(dets, tracks, times, ib)
     track_id = {id(d): k for k, tr in enumerate(tracks) for d in tr}
     track_len = {k: len(tr) for k, tr in enumerate(tracks)}
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(OUT, dates=np.asarray(times.strftime("%Y%m%d"), dtype=str),
+    out = args.out if args.out.is_absolute() else PROJECT_ROOT / args.out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(out, dates=np.asarray(times.strftime("%Y%m%d"), dtype=str),
              t=np.array([d.t for d in dets]), lat=np.array([d.lat for d in dets]),
              lon=np.array([d.lon for d in dets]), zeta=np.array([d.zeta for d in dets]),
              deficit=np.array([d.deficit for d in dets]),
              track=np.array([track_id[id(d)] for d in dets]),
              track_len=np.array([track_len[track_id[id(d)]] for d in dets]),
              mask=mask, params=json.dumps({"zeta_min": z, "deficit_min": dp, **s}))
-    print(f"wrote {OUT} | {len(dets)} detections, {len(tracks)} tracks | " + json.dumps(s), flush=True)
+    print(f"wrote {out} | {len(dets)} detections, {len(tracks)} tracks | " + json.dumps(s), flush=True)
 
 
 if __name__ == "__main__":

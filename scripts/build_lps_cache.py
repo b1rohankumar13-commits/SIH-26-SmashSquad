@@ -17,6 +17,12 @@ Writes to --cache-dir:
   P.dat      float32 [n, lead, lat, lon]    ensemble strike probability (raw)
   meta.json  inits, is_train (2000-2007), channel names, climatology check
 The model concatenates X_lps with the rich cache (65 + 6 = 71 channels).
+
+--store rain builds the 20-year variant from the 6-var rain store (same u/v 850 and MSLP
+fields - identical values), rows aligned with the 24-ch cache rain_20yr_24ch_nbhd:
+  python -m scripts.build_lps_cache --store rain --years 2000-2019 --train-last 2015 \
+      --truth data/processed/lps_truth_20yr.npz --cache-dir D:/sih-data/caches/lps_20yr
+The per-lead GEFS thresholds stay as fitted on 2000-2007.
 """
 
 from __future__ import annotations
@@ -39,6 +45,18 @@ from src.models.graphnet.grid_graph import canonical_centres
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MV_ROOT = PROJECT_ROOT / "data" / "interim" / "forecasts" / "gefs" / "reforecast_2000_2019_mv"
+RAIN_ROOT = PROJECT_ROOT / "data" / "interim" / "forecasts" / "gefs" / "reforecast_2000_2019"
+# store -> (root, u850, v850, mslp readers, feature cache the model concatenates, its channels)
+STORES = {
+    "mv": (MV_ROOT, lambda ds: ds["ugrd_850"], lambda ds: ds["vgrd_850"], lambda ds: ds["pres_msl"],
+           r"D:\sih-data\caches\rain_rich_10yr", 65),
+    "rain": (RAIN_ROOT, lambda ds: ds["u_wind"].sel(level=850), lambda ds: ds["v_wind"].sel(level=850),
+             lambda ds: ds["mean_sea_level_pressure"], r"D:\sih-data\caches\rain_20yr_24ch_nbhd", 24),
+    # Held-out test year from operational GEFS (same layout); pair with --standardizer from lps_20yr.
+    "ops_rain": (PROJECT_ROOT / "data" / "interim" / "forecasts" / "gefs" / "operational" / "rain",
+                 lambda ds: ds["u_wind"].sel(level=850), lambda ds: ds["v_wind"].sel(level=850),
+                 lambda ds: ds["mean_sea_level_pressure"], r"D:\sih-data\caches\rain_test_2022", 24),
+}
 TRUTH = PROJECT_ROOT / "data" / "processed" / "lps_truth.npz"
 LEADS, LAT, LON = 9, 66, 70
 # Per-lead GEFS vorticity thresholds matching ERA5 detection frequency (train years only).
@@ -47,13 +65,14 @@ CHANNELS = ["p_strike300", "p_strike600", "zeta850_mean", "zeta850_spread", "msl
 
 
 def process_init(args) -> tuple[int, np.ndarray, np.ndarray, list]:
-    k, path, mask, zeta_by_lead, deficit_min = args
+    k, path, mask, zeta_by_lead, deficit_min, store = args
+    _, get_u, get_v, get_msl, _, _ = STORES[store]
     lats, lons = canonical_centres(0.5)
     step = 0.5
     ring = _annulus(5.0 / step, 8.0 / step); ring = ring / ring.sum()
     with xr.open_dataset(path) as ds:
-        get = lambda v: ds[v].isel(run=0).transpose("member", "lead", "latitude", "longitude").values
-        u, v, msl = get("ugrd_850"), get("vgrd_850"), get("pres_msl") / 100.0
+        get = lambda da: da.isel(run=0).transpose("member", "lead", "latitude", "longitude").values
+        u, v, msl = get(get_u(ds)), get(get_v(ds)), get(get_msl(ds)) / 100.0
     nm = u.shape[0]
     feats = np.zeros((LEADS, LAT, LON, len(CHANNELS)), np.float32)
     p300 = np.zeros((LEADS, LAT, LON), np.float32)
@@ -83,11 +102,19 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--cache-dir", default=r"D:\sih-data\caches\lps_10yr")
     ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--store", choices=list(STORES), default="mv")
+    ap.add_argument("--years", default="2000-2009")
+    ap.add_argument("--train-last", type=int, default=2007)
+    ap.add_argument("--truth", type=Path, default=TRUTH)
+    ap.add_argument("--standardizer", type=Path, default=None,
+                    help="Reuse a training cache's standardizer.npz (test years) instead of fitting one.")
     args = ap.parse_args()
+    root, _, _, _, feature_cache, feature_ch = STORES[args.store]
+    y0, y1 = (int(y) for y in args.years.split("-"))
     out = Path(args.cache_dir); out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
 
-    truth = np.load(TRUTH)
+    truth = np.load(args.truth if args.truth.is_absolute() else PROJECT_ROOT / args.truth)
     params = json.loads(str(truth["params"]))
     mask = truth["mask"]
     tdates = list(truth["dates"])
@@ -96,10 +123,10 @@ def main():
     for t, la, lo in zip(truth["t"], truth["lat"], truth["lon"]):
         centres_by_date.setdefault(tdates[t], []).append((float(la), float(lo)))
 
-    files = sorted(f for y in range(2000, 2010) for f in glob.glob(str(MV_ROOT / f"{y}*.nc")))
+    files = sorted(f for y in range(y0, y1 + 1) for f in glob.glob(str(root / f"{y}*.nc")))
     inits = [Path(f).stem[:8] for f in files]
     n = len(files)
-    is_train = np.array([int(s[:4]) <= 2007 for s in inits])
+    is_train = np.array([int(s[:4]) <= args.train_last for s in inits])
     print(f"{n} inits | ERA5 zeta>={params['zeta_min']:.1e}, GEFS zeta by lead {GEFS_ZETA_BY_LEAD} "
           f"dip>={params['deficit_min']} | "
           f"{args.workers} workers", flush=True)
@@ -108,7 +135,7 @@ def main():
     P = np.memmap(out / "P.dat", np.float32, "w+", shape=(n, LEADS, LAT, LON))
     Y = np.memmap(out / "Y_dir.dat", np.float32, "w+", shape=(n, LEADS, LAT, LON, 2))
     ncount = np.zeros((n, LEADS), np.float32)
-    jobs = [(k, f, mask, GEFS_ZETA_BY_LEAD, params["deficit_min"]) for k, f in enumerate(files)]
+    jobs = [(k, f, mask, GEFS_ZETA_BY_LEAD, params["deficit_min"], args.store) for k, f in enumerate(files)]
     done = 0
     with ProcessPoolExecutor(args.workers) as pool:
         for k, feats, p300, nc in pool.map(process_init, jobs, chunksize=8):
@@ -122,9 +149,12 @@ def main():
                 print(f"  {done}/{n} | {time.time()-t0:.0f}s", flush=True)
 
     # standardize extra channels on train rows
-    tr = np.where(is_train)[0][::5]
-    samp = np.asarray(X[tr]).reshape(-1, len(CHANNELS))
-    mu, sd = samp.mean(0), samp.std(0); sd[sd < 1e-6] = 1.0
+    if args.standardizer:
+        std = np.load(args.standardizer); mu, sd = std["mean"], std["std"]
+    else:
+        tr = np.where(is_train)[0][::5]
+        samp = np.asarray(X[tr]).reshape(-1, len(CHANNELS))
+        mu, sd = samp.mean(0), samp.std(0); sd[sd < 1e-6] = 1.0
     for s0 in range(0, n, 128):
         X[s0:s0 + 128] = (np.asarray(X[s0:s0 + 128]) - mu) / sd
     X.flush(); P.flush(); Y.flush()
@@ -139,7 +169,8 @@ def main():
              "miss_rate_val": float(np.nanmean(Yv[~is_train][..., 0])),
              "fa_rate_val": float(np.nanmean(Yv[~is_train][..., 1]))}
     meta = {"n": n, "leads": LEADS, "lat": LAT, "lon": LON, "channels": CHANNELS, "inits": inits,
-            "is_train": is_train.tolist(), "rich_cache": r"D:\sih-data\caches\rain_rich_10yr",
+            "is_train": is_train.tolist(), "rich_cache": feature_cache, "feature_ch": feature_ch,
+            "store": args.store, "truth": str(args.truth),
             "tracker": {**params, "gefs_zeta_by_lead": GEFS_ZETA_BY_LEAD}, "stats": stats}
     (out / "meta.json").write_text(json.dumps(meta, indent=1))
     print("stats " + json.dumps(stats), flush=True)

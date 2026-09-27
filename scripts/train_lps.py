@@ -5,6 +5,16 @@ Inputs per cell/lead: the 65-ch rich cache (rain_rich_10yr) + 6 LPS channels (lp
 300 km (labels from build_lps_cache.py). Same wide-and-deep head as the heatwave model:
 a logistic baseline on the ensemble LPS signals (+ lead), frozen; the encoder adds a
 correction. Epoch 0 scores that baseline. Train 2000-2007, validate 2008-2009.
+
+The 20-year cache (lps_20yr, 24-ch rain features, "feature_ch" in meta.json) trains on
+2000-2015 / validates on 2016-2019 by default; --train-last/--val-years override the split,
+e.g. --train-last 2007 --val-years 2008-2009 for the equal-years ablation.
+--lag adds the lagged-ensemble channels (X_lag.dat from build_lps_lag.py: the runs issued
+1 and 2 days earlier at the same valid time); their pooled strike probability also joins the
+frozen GEFS-only baseline, so "GEFS alone" gets the extra runs too.
+--env adds storm-environment channels (X_env.dat from build_lps_env.py: MJO at issue time,
+seasonal storm climatology, day of year). They are not GEFS output, so the baseline ignores them.
+LPS channels are read from memmaps per batch (the 20-year cache does not fit in RAM).
 The rich cache (39 GB) is read per batch from its memmap; the LPS channels fit in RAM.
 """
 
@@ -24,7 +34,6 @@ from sklearn.metrics import average_precision_score
 from scripts.train_heatwave import TARGETS, HeatwaveBustNet
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RICH_CH = 65
 WIDE_NAMES = ["p_strike300", "p_strike600", "zeta850_mean", "zeta850_spread", "msl_dip_mean", "lead01"]
 
 
@@ -38,50 +47,83 @@ def main():
     ap.add_argument("--patience", type=int, default=8)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--tag", default="")
+    ap.add_argument("--train-last", type=int, default=None, help="Last training year (default: meta is_train).")
+    ap.add_argument("--val-years", default=None, help="e.g. 2008-2009 (default: every non-training init).")
+    ap.add_argument("--lag", action="store_true", help="Add lagged-ensemble channels (X_lag.dat).")
+    ap.add_argument("--env", action="store_true", help="Add storm-environment channels (X_env.dat).")
     args = ap.parse_args()
     torch.manual_seed(args.seed); np.random.seed(args.seed)
     cache = Path(args.cache_dir)
     meta = json.loads((cache / "meta.json").read_text())
     n, L, H, W = meta["n"], meta["leads"], meta["lat"], meta["lon"]
     lps_names = meta["channels"]
+    RICH_CH = meta.get("feature_ch", 65)
     rich = np.memmap(Path(meta["rich_cache"]) / "X.dat", np.float32, "r", shape=(n, L, H, W, RICH_CH))
-    Xl = np.fromfile(cache / "X_lps.dat", np.float32).reshape(n, L, H, W, len(lps_names))
+    Xl = np.memmap(cache / "X_lps.dat", np.float32, "r", shape=(n, L, H, W, len(lps_names)))
+    lag_names = meta["lag_channels"] if args.lag else []
+    Xg = np.memmap(cache / "X_lag.dat", np.float32, "r", shape=(n, L, H, W, len(lag_names))) if args.lag else None
+    env_names = meta["env_channels"] if args.env else []
+    Xe = np.memmap(cache / "X_env.dat", np.float32, "r", shape=(n, L, H, W, len(env_names))) if args.env else None
     Y = np.fromfile(cache / "Y_dir.dat", np.float32).reshape(n, L, H, W, 2)
     P = np.fromfile(cache / "P.dat", np.float32).reshape(n, L, H, W)
     lead01 = np.broadcast_to(np.linspace(0, 1, L, dtype=np.float32)[:, None, None, None], (L, H, W, 1))
-    C = RICH_CH + len(lps_names) + 1
-    names = [f"rich{i}" for i in range(RICH_CH)] + lps_names + ["lead01"]
-    wide_idx = [names.index(w) for w in WIDE_NAMES]
-    is_tr = np.asarray(meta["is_train"])
-    tr_idx, va_idx = np.where(is_tr)[0], np.where(~is_tr)[0]
-    print(f"[{args.arch}] n {n} train {len(tr_idx)} val {len(va_idx)} | {C} ch | wide {WIDE_NAMES}", flush=True)
+    C = RICH_CH + len(lps_names) + len(lag_names) + len(env_names) + 1
+    names = [f"rich{i}" for i in range(RICH_CH)] + lps_names + lag_names + env_names + ["lead01"]
+    wide_names = WIDE_NAMES + (["p_strike300_lagged"] if args.lag else [])
+    wide_idx = [names.index(w) for w in wide_names]
+    years = np.array([int(s[:4]) for s in meta["inits"]])
+    is_tr = years <= args.train_last if args.train_last else np.asarray(meta["is_train"])
+    if args.val_years:
+        v0, v1 = (int(y) for y in args.val_years.split("-"))
+        is_va = (years >= v0) & (years <= v1) & ~is_tr
+    else:
+        is_va = ~is_tr
+    tr_idx, va_idx = np.where(is_tr)[0], np.where(is_va)[0]
+    print(f"[{args.arch}] n {n} train {len(tr_idx)} val {len(va_idx)} | {C} ch | wide {wide_names}", flush=True)
+
+    def extra(idx):  # LPS (+ lagged) channels + lead, i.e. everything after the rain/rich block
+        parts = ([np.asarray(Xl[idx])] + ([np.asarray(Xg[idx])] if args.lag else [])
+                 + ([np.asarray(Xe[idx])] if args.env else []))
+        return np.concatenate(parts + [np.broadcast_to(lead01, (len(idx), L, H, W, 1))], -1)
 
     def features(idx):
-        x = np.concatenate([np.asarray(rich[idx]), Xl[idx], np.broadcast_to(lead01, (len(idx), L, H, W, 1))], -1)
-        return x
+        return np.concatenate([np.asarray(rich[idx]), extra(idx)], -1)
 
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     model = HeatwaveBustNet(args.arch, C, wide_idx).to(dev)
     rng = np.random.default_rng(args.seed)
-    # frozen logistic baseline on wide features (LPS channels + lead only - no rich read needed)
-    wide_feats = np.concatenate([Xl[tr_idx], np.broadcast_to(lead01, (len(tr_idx), L, H, W, 1))], -1)
-    wide_feats = wide_feats[..., [(lps_names + ["lead01"]).index(w) for w in WIDE_NAMES]]
+    # frozen logistic baseline on wide features (LPS/lag channels + lead only - no rich read needed).
+    # Cells are sampled by flat index and gathered row by row, so nothing train-sized is materialised.
+    wide_cols = [(lps_names + lag_names + env_names + ["lead01"]).index(w) for w in wide_names]
     ytr = Y[tr_idx]; pw = []
+    cell = L * H * W
+
+    def gather(flat):
+        rows, rest = np.divmod(np.sort(flat), cell)
+        out = np.empty((len(flat), len(wide_cols)), np.float32); k = 0
+        for r in np.unique(rows):
+            sel = rest[rows == r]
+            out[k:k + len(sel)] = extra(tr_idx[[r]])[0].reshape(cell, -1)[sel][:, wide_cols]; k += len(sel)
+        return out, np.sort(flat)
+
     with torch.no_grad():
         for j, name in enumerate(TARGETS):
-            yj = ytr[..., j]; fin = np.isfinite(yj)
-            pos = np.argwhere(fin & (yj == 1)); neg = np.argwhere(fin & (yj == 0))
-            pw.append(len(neg) / max(len(pos), 1))
-            neg = neg[rng.choice(len(neg), min(len(neg), 20 * max(len(pos), 1000)), replace=False)]
-            pick = np.concatenate([pos, neg]); ys = np.r_[np.ones(len(pos)), np.zeros(len(neg))]
-            lr = LogisticRegression(max_iter=2000, class_weight="balanced").fit(wide_feats[tuple(pick.T)], ys)
+            yj = ytr[..., j].reshape(-1); fin = np.isfinite(yj)
+            pos = np.flatnonzero(fin & (yj == 1)); n_neg = int(fin.sum()) - len(pos)
+            pw.append(n_neg / max(len(pos), 1))
+            want = min(n_neg, 20 * max(len(pos), 1000))
+            cand = np.unique(rng.integers(0, len(yj), int(want * 1.3) + 1000))
+            neg = cand[fin[cand] & (yj[cand] == 0)][:want]
+            feats, flat = gather(np.concatenate([pos, neg]))
+            ys = (yj[flat] == 1).astype(np.float64)
+            lr = LogisticRegression(max_iter=2000, class_weight="balanced").fit(feats, ys)
             model.wide.weight[j] = torch.tensor(lr.coef_[0], dtype=torch.float32)
             model.wide.bias[j] = float(lr.intercept_[0])
             print(f"  {name}: train positives {len(pos):,} base {100*len(pos)/fin.sum():.3f}% (pos_weight {pw[-1]:.0f})",
                   flush=True)
     for prm in model.wide.parameters():
         prm.requires_grad = False
-    del wide_feats, ytr
+    del ytr
     pwt = torch.tensor(pw, device=dev, dtype=torch.float32)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
@@ -129,8 +171,10 @@ def main():
         hist["epochs"].append({"epoch": ep, "seconds": round(time.time() - t0, 1), "val_pr_auc": a})
         if sel(a) > best:
             best, best_ep, since = sel(a), ep, 0
-            torch.save({"model_state": model.state_dict(), "arch": args.arch, "wide_idx": wide_idx,
-                        "in_channels": C, "val_pr_auc": a, "epoch": ep}, out_path)
+            torch.save({"model_state": model.state_dict(), "arch": args.arch, "wide_idx": wide_idx, "lag": args.lag, "env": args.env,
+                        "in_channels": C, "val_pr_auc": a, "epoch": ep, "cache": str(cache),
+                        "train_last": int(years[tr_idx].max()), "val_years": [int(years[va_idx].min()), int(years[va_idx].max())]},
+                       out_path)
         else:
             since += 1
             if since >= args.patience:
