@@ -7,12 +7,12 @@ import { useEffect, useMemo } from "react";
 import { AppShell } from "@/components/app-shell";
 import { CasePicker, DeskControls } from "@/components/desk/controls";
 import { MonsoonView } from "@/components/desk/monsoon-view";
-import { CaseCard, GridMetrics, LeadChart, MapLegend, MetricsSkeleton, ModelFacts } from "@/components/desk/panels";
+import { CaseCard, GridMetrics, LeadChart, MapLegend, MetricsSkeleton, ModelFacts, SkillCard } from "@/components/desk/panels";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useCases, useGrid, useHazards, useInits, useLeads, useMonsoon } from "@/lib/api";
-import { EVENT_WORD, formatInit, formatValid, oneIn } from "@/lib/format";
+import { useCases, useGefsTracks, useGrid, useHazards, useInits, useLeads, useMonsoon, useTracks } from "@/lib/api";
+import { EVENT_WORD, formatInit, formatValid, oneIn, validDate, ymd } from "@/lib/format";
 import { atIntensity, classify, scaleFor, SHOW_FROM, type Scale, type Thresholds } from "@/lib/risk";
 import type { CaseStudy } from "@/lib/types";
 import { useDeskState } from "@/lib/use-desk-state";
@@ -22,6 +22,7 @@ const RiskMap = dynamic(() => import("@/components/desk/risk-map").then((m) => m
 });
 
 const MODE_LABEL = { both: "Both directions", miss: "Misses", false_alarm: "False alarms" } as const;
+const DIRECTION_LABEL = { miss: "Misses", false_alarm: "False alarms" };
 
 function ErrorState({ message }: { message: string }) {
   return (
@@ -73,6 +74,9 @@ export function Desk() {
       : update({ caseId: undefined });
 
   const event = EVENT_WORD[hazard?.id ?? "rain"] ?? "event";
+  const shift = hazard?.valid_shift;
+  const gefsTracks = useGefsTracks(hazard?.id === "lps" && state.gefs ? init : undefined);
+  const tracks = useTracks(hazard?.id === "lps" && init ? ymd(validDate(init, state.lead, shift)) : undefined);
   const error = hazards.error ?? inits.error ?? grid.error ?? monsoon.error;
 
   return (
@@ -100,33 +104,37 @@ export function Desk() {
             <MonsoonView hazard={hazard} data={monsoon.data} lead={state.lead} showObserved={state.observed} />
           ) : (
             <>
-              {cells && thresholds ? <GridMetrics cells={cells} thresholds={thresholds} event={event} validLabel={formatValid(init!, state.lead)} /> : <MetricsSkeleton />}
+              {cells && thresholds ? <GridMetrics cells={cells} thresholds={thresholds} event={event} validLabel={formatValid(init!, state.lead, shift)} /> : <MetricsSkeleton />}
               {activeCase && cells && <CaseCard c={activeCase} cells={cells} event={event} lead={state.lead} />}
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
                 <Card className="gap-3">
                   <CardHeader className="flex flex-row items-center justify-between gap-2">
                     <div className="flex flex-col gap-1">
                       <CardTitle>{hazard.label} bust risk · Day {state.lead}</CardTitle>
-                      <CardDescription>Valid {formatValid(init!, state.lead)} · issued {formatInit(init!)} 00 UTC</CardDescription>
+                      <CardDescription>Valid {formatValid(init!, state.lead, shift)} · issued {formatInit(init!)} 00 UTC</CardDescription>
                     </div>
                     <Badge variant="outline">{MODE_LABEL[mode]}</Badge>
                   </CardHeader>
                   <CardContent>
                     <RiskMap
                       cells={cells} mode={mode} showObserved={state.observed} showGefs={state.gefs}
+                      tracks={hazard.id === "lps" && state.observed ? tracks.data : undefined}
+                      gefsTracks={hazard.id === "lps" && state.gefs ? gefsTracks.data : undefined} lead={state.lead}
                       box={activeCase?.box} boxTone={activeCase?.mode}
-                      label={cells ? `${hazard.label} bust-risk map for ${formatValid(init!, state.lead)}: ${cells.filter((c) => c.missFlag).length} cells flagged for a likely miss, ${cells.filter((c) => c.faFlag).length} for a likely false alarm.` : "Loading map"}
+                      label={cells ? `${hazard.label} bust-risk map for ${formatValid(init!, state.lead, shift)}: ${cells.filter((c) => c.missFlag).length} cells flagged for a likely miss, ${cells.filter((c) => c.faFlag).length} for a likely false alarm.` : "Loading map"}
                     />
                   </CardContent>
                 </Card>
                 <div className="flex flex-col gap-4">
-                  {scales && <MapLegend scales={scales} mode={mode} event={event} showObserved={state.observed} showGefs={state.gefs} />}
+                  {scales && <MapLegend scales={scales} mode={mode} event={event} showObserved={state.observed} showGefs={state.gefs}
+                    showTracks={hazard.id === "lps" && state.observed} showGefsTracks={hazard.id === "lps" && state.gefs} />}
                   <ModelFacts hazard={hazard} falseAlarmNote={hazard.id === "rain"
                     ? `False alarms are largely visible in GEFS itself: when most members call ${event}, it doesn’t happen about ${oneIn(hazard.tiers.false_alarm.high.precision)} times. The model’s value is mainly on misses — events GEFS gave no warning of.`
                     : undefined} />
+                  <SkillCard hazard={hazard} labels={DIRECTION_LABEL} cuts={thresholds ?? undefined} />
                 </div>
               </div>
-              <LeadChart rows={leads.data} mode={mode} showObserved={state.observed} lead={state.lead} init={init!} />
+              <LeadChart rows={leads.data} mode={mode} showObserved={state.observed} lead={state.lead} init={init!} shift={shift} />
             </>
           )}
         </>

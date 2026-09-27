@@ -5,13 +5,15 @@ const fmtShort = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "shor
 
 export const parseInit = (s: string) => new Date(Date.UTC(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8)));
 export const formatInit = (s: string) => fmtDate.format(parseInit(s));
-export const validDate = (init: string, lead: number) => {
+/** Daily totals for lead L cover init + L - 1 (shift -1); 00 UTC snapshots verify at init + L (shift 0). */
+export const validDate = (init: string, lead: number, shift = -1) => {
   const d = parseInit(init);
-  d.setUTCDate(d.getUTCDate() + lead - 1);
+  d.setUTCDate(d.getUTCDate() + lead + shift);
   return d;
 };
-export const formatValid = (init: string, lead: number) => fmtDate.format(validDate(init, lead));
-export const formatValidShort = (init: string, lead: number) => fmtShort.format(validDate(init, lead));
+export const formatValid = (init: string, lead: number, shift?: number) => fmtDate.format(validDate(init, lead, shift));
+export const formatValidShort = (init: string, lead: number, shift?: number) => fmtShort.format(validDate(init, lead, shift));
+export const ymd = (d: Date) => d.toISOString().slice(0, 10).replaceAll("-", "");
 
 export const pct = (v: number, digits = 0) => `${(v * 100).toFixed(digits)}%`;
 
@@ -31,7 +33,7 @@ export function tierSentence(t: Tier, direction: "miss" | "false_alarm", event: 
   return `${oneIn(t.precision)} flagged cells turned out to be ${what} (${lift}); catches ${pct(t.catch_rate)} of them.`;
 }
 
-export const EVENT_WORD: Record<string, string> = { rain: "extreme rain", heatwave: "heatwave", monsoon: "spell" };
+export const EVENT_WORD: Record<string, string> = { rain: "extreme rain", heatwave: "heatwave", lps: "storm activity", monsoon: "spell" };
 
 export const TARGET_LABELS: Record<string, string> = {
   miss_break: "Missed break spell",

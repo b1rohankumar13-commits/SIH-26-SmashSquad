@@ -26,6 +26,8 @@ export interface Calibration {
   y: number[];
   max: number;
   curve: CurvePoint[];
+  /** Per lead-band knots (days 1-3 / 4-6 / 7-9); the pooled x/y is the fallback. */
+  bands?: { leads: number[]; x: number[]; y: number[] }[];
 }
 
 export interface Tiers {
@@ -34,6 +36,21 @@ export interface Tiers {
   high: Tier;
   elevated: Tier | null;
   calibration: Calibration;
+}
+
+export interface Scores {
+  auroc: number;
+  pr_auc: number;
+  /** Brier skill vs climatology, isotonic-calibrated on the other half of the validation period. */
+  bss: number;
+}
+
+/** Model vs the ensemble-only logistic baseline, on identical validation cells. */
+export interface Skill {
+  model: Scores;
+  baseline: Scores;
+  n: number;
+  busts: number;
 }
 
 export interface Hazard {
@@ -49,8 +66,27 @@ export interface Hazard {
   last_init: string;
   notable_inits?: string[];
   tiers: Record<string, Tiers>;
+  skill?: Record<string, Skill>;
   targets?: string[];
   region?: string;
+  /** Days added to init + lead to get the valid date: -1 for daily totals (default), 0 for 00 UTC snapshots. */
+  valid_shift?: number;
+}
+
+/** One GEFS member's forecast storm track; points are [lead, lat, lon]. */
+export interface GefsTrack {
+  member: number;
+  points: [number, number, number][];
+}
+
+/** An observed (ERA5) low-pressure-system track near the valid date; points are [lon, lat]. */
+export interface Track {
+  track: number;
+  path: [number, number][];
+  dates: string[];
+  now: [number, number];
+  first: string;
+  last: string;
 }
 
 export interface GridData {
@@ -99,4 +135,5 @@ export interface CaseStudy {
   region: string;
   box: Box;
   story: string;
+  valid_shift?: number;
 }

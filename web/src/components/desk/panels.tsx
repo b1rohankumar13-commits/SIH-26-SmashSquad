@@ -7,8 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatInit, formatValidShort, oneIn, pct } from "@/lib/format";
-import { atIntensity, inBox, pctLabel, rampColour, rgba, SHOW_FROM, type Cell, type Scale, type Thresholds } from "@/lib/risk";
-import type { CaseStudy, Direction, Hazard, LeadRow, Mode } from "@/lib/types";
+import { atIntensity, inBox, pctLabel, rampColour, rgba, SHOW_FROM, splitRates, type Cell, type Scale, type Thresholds } from "@/lib/risk";
+import type { CaseStudy, Direction, Hazard, LeadRow, Mode, Scores } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export function DirectionBadge({ direction }: { direction: Direction }) {
@@ -82,8 +82,9 @@ function Ramp({ direction }: { direction: Direction }) {
   return <span aria-hidden className="mt-1 h-3 w-full rounded-full ring-1 ring-foreground/10" style={{ background: `linear-gradient(90deg, ${stops.join(", ")})` }} />;
 }
 
-export function MapLegend({ scales, mode, event, showObserved, showGefs }: {
+export function MapLegend({ scales, mode, event, showObserved, showGefs, showTracks, showGefsTracks }: {
   scales: Record<Direction, Scale>; mode: Mode; event: string; showObserved: boolean; showGefs: boolean;
+  showTracks?: boolean; showGefsTracks?: boolean;
 }) {
   const dirs = (mode === "both" ? ["miss", "false_alarm"] : [mode]) as Direction[];
   return (
@@ -116,6 +117,28 @@ export function MapLegend({ scales, mode, event, showObserved, showGefs }: {
               </div>
             </li>
           ))}
+          {showTracks && (
+            <li className="flex gap-3 py-2.5">
+              <span aria-hidden className="mt-1.5 flex h-0.5 w-3.5 shrink-0 items-center rounded-full bg-foreground">
+                <span className="mx-auto size-2 rounded-full border-2 border-foreground bg-background" />
+              </span>
+              <div className="flex flex-col gap-0.5">
+                <span className="font-medium">Observed system</span>
+                <span className="text-muted-foreground">Track from ERA5 (3 days either side); the ring is its position on the valid date.</span>
+              </div>
+            </li>
+          )}
+          {showGefsTracks && (
+            <li className="flex gap-3 py-2.5">
+              <span aria-hidden className="mt-1.5 flex h-0.5 w-3.5 shrink-0 items-center rounded-full bg-teal-600 dark:bg-teal-400">
+                <span className="mx-auto size-1.5 rounded-full bg-teal-600 dark:bg-teal-400" />
+              </span>
+              <div className="flex flex-col gap-0.5">
+                <span className="font-medium">GEFS forecast tracks</span>
+                <span className="text-muted-foreground">One line per member&apos;s forecast system; dots are where each member puts it on the valid date.</span>
+              </div>
+            </li>
+          )}
           {showGefs && (
             <li className="flex gap-3 py-2.5">
               <Swatch colour={[20, 184, 166, 170]} />
@@ -142,10 +165,6 @@ export function ModelFacts({ hazard, falseAlarmNote }: { hazard: Hazard; falseAl
     ["Event", prettyText(hazard.event)], ["Model", hazard.model], ["Truth", prettyText(hazard.truth)],
     ["Validation", prettyPeriod(hazard.val_period)],
   ];
-  for (const [key, t] of Object.entries(hazard.tiers)) {
-    rows.push([`${key.replaceAll("_", " ")} skill (PR-AUC)`,
-      <span key={key} className="tabular-nums">{t.pr_auc.toFixed(3)} · {Math.round(t.pr_auc / t.base_rate)}× chance</span>]);
-  }
   return (
     <Card size="sm">
       <CardHeader><CardTitle>About this model</CardTitle></CardHeader>
@@ -167,6 +186,84 @@ export function ModelFacts({ hazard, falseAlarmNote }: { hazard: Hazard; falseAl
   );
 }
 
+const SKILL_ROWS: { key: keyof Scores; label: string; hint: string }[] = [
+  { key: "auroc", label: "AUROC", hint: "ranks busts above non-busts; 0.5 = coin flip" },
+  { key: "pr_auc", label: "PR-AUC", hint: "precision across catch rates; chance = the bust rate below the heading" },
+  { key: "bss", label: "Brier skill", hint: "probability accuracy vs always saying the bust rate; 0 = no skill" },
+];
+
+const SCOPE: Record<string, string> = { miss: "GEFS gave < 20%", false_alarm: "GEFS gave ≥ 50%" };
+
+/**
+ * Model vs what GEFS alone says (a logistic on the ensemble's own event probability, mean,
+ * spread and lead), scored on identical validation cells. For grid hazards also shows the
+ * bust rate inside vs outside the coloured area at the map's cut-off.
+ */
+export function SkillCard({ hazard, labels, cuts, unit = "cells" }: {
+  hazard: Hazard; labels: Record<string, string>; cuts?: Thresholds; unit?: string;
+}) {
+  const skill = Object.entries(hazard.skill ?? {});
+  if (!skill.length) return null;
+  return (
+    <Card size="sm">
+      <CardHeader>
+        <CardTitle>Does it beat GEFS alone?</CardTitle>
+        <CardDescription className="text-pretty">
+          Scored against a baseline built only from the GEFS ensemble’s own numbers, on the same validation cells.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col divide-y">
+        {skill.map(([key, s]) => {
+          const t = hazard.tiers[key];
+          const split = cuts && t && (key === "miss" || key === "false_alarm") ? splitRates(t, cuts[key]) : null;
+          return (
+            <section key={key} aria-label={labels[key] ?? key} className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0">
+              <div className="flex flex-col gap-0.5">
+                <h3 className="text-sm font-medium">{labels[key] ?? key}</h3>
+                <p className="text-xs text-muted-foreground tabular-nums">
+                  {s.n.toLocaleString("en-IN")} {unit}{SCOPE[key] ? ` where ${SCOPE[key]}` : ""} · {pctLabel(s.busts / s.n)} busted
+                </p>
+              </div>
+              <table className="w-full text-sm tabular-nums">
+                <thead>
+                  <tr className="text-xs text-muted-foreground">
+                    <th scope="col" className="pb-1 text-left font-normal">Score</th>
+                    <th scope="col" className="pb-1 text-right font-normal">Model</th>
+                    <th scope="col" className="pb-1 text-right font-normal">GEFS alone</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {SKILL_ROWS.map((r) => {
+                    const m = s.model[r.key], b = s.baseline[r.key];
+                    return (
+                      <tr key={r.key} title={r.hint}>
+                        <th scope="row" className="py-0.5 text-left font-normal text-muted-foreground">{r.label}</th>
+                        <td className={cn("py-0.5 text-right", m > b && "font-semibold")}>{m.toFixed(3)}</td>
+                        <td className={cn("py-0.5 text-right", b > m && "font-semibold")}>{b.toFixed(3)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {split && (
+                <p className="text-xs text-pretty text-muted-foreground">
+                  Coloured cells busted <b className="font-medium text-foreground">{pctLabel(split.inside)}</b> of the time vs{" "}
+                  {split.inside / split.outside < 100
+                    ? `${pctLabel(split.outside)} elsewhere (${Math.round(split.inside / split.outside)}× the rate`
+                    : `almost never elsewhere (${pctLabel(split.outside)}`}, on {pctLabel(split.share)} of cells).
+                </p>
+              )}
+            </section>
+          );
+        })}
+        <p className="pt-3 text-xs text-pretty text-muted-foreground">
+          {skill.some(([k]) => SCOPE[k]) && "Each direction is scored only where that bust can happen. "}Brier skill uses a calibration fitted on the other half of the validation period.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 const leadConfig = {
   miss_flagged: { label: "Miss · high alerts", color: "var(--miss)" },
   miss_observed: { label: "Miss · observed", color: "var(--miss)" },
@@ -174,7 +271,7 @@ const leadConfig = {
   false_alarm_observed: { label: "False alarm · observed", color: "var(--fa)" },
 } satisfies ChartConfig;
 
-export function LeadChart({ rows, mode, showObserved, lead, init }: { rows?: LeadRow[]; mode: Mode; showObserved: boolean; lead: number; init: string }) {
+export function LeadChart({ rows, mode, showObserved, lead, init, shift }: { rows?: LeadRow[]; mode: Mode; showObserved: boolean; lead: number; init: string; shift?: number }) {
   const dirs = (mode === "both" ? ["miss", "false_alarm"] : [mode]) as Direction[];
   return (
     <Card>
@@ -188,7 +285,7 @@ export function LeadChart({ rows, mode, showObserved, lead, init }: { rows?: Lea
             <ComposedChart data={rows} margin={{ left: 4, right: 8, top: 8 }} accessibilityLayer>
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
               <XAxis dataKey="lead" tickLine={false} axisLine={false} tickMargin={8}
-                tickFormatter={(d) => `D${d} · ${formatValidShort(init, d)}`} fontSize={11} />
+                tickFormatter={(d) => `D${d} · ${formatValidShort(init, d, shift)}`} fontSize={11} />
               <YAxis tickLine={false} axisLine={false} width={36} allowDecimals={false} />
               <ChartTooltip content={<ChartTooltipContent labelFormatter={(_, p) => `Day ${p?.[0]?.payload?.lead}`} />} />
               <ChartLegend content={<ChartLegendContent />} />
@@ -209,7 +306,7 @@ export function LeadChart({ rows, mode, showObserved, lead, init }: { rows?: Lea
 export function CaseCard({ c, cells, event, lead }: { c: CaseStudy; cells: Cell[]; event: string; lead: number }) {
   const box = cells.filter((x) => inBox(x, c.box));
   const gefs = box.filter((x) => x.ens >= 0.5).length;
-  const before = `issued ${formatInit(c.init)}, ${lead - 1} days before`;
+  const before = `issued ${formatInit(c.init)}, ${lead + (c.valid_shift ?? -1)} days before`;
   let stats: [string, string, string][];
   if (c.mode === "miss") {
     const hit = box.filter((x) => x.obsMiss);

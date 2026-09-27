@@ -3,10 +3,11 @@ import type { Box, Calibration, CurvePoint, Direction, GridData, Mode, Tiers } f
 /**
  * Raw model scores are inflated by class-weighted training (a 0.97 rain-miss score busts
  * ~10–19% of the time), so everything user-facing uses the calibrated bust probability:
- * the observed validation bust rate at that score (isotonic fit, see export script).
+ * the observed validation bust rate at that score (isotonic fit, see export script),
+ * fitted per lead band where available because skill falls with lead.
  */
-export function calibrate(p: number, cal: Calibration): number {
-  const { x, y } = cal;
+export function calibrate(p: number, cal: Calibration, lead?: number): number {
+  const { x, y } = (lead !== undefined && cal.bands?.find((b) => b.leads.includes(lead))) || cal;
   if (p <= x[0]) return y[0];
   if (p >= x[x.length - 1]) return y[y.length - 1];
   let lo = 0, hi = x.length - 1;
@@ -69,7 +70,7 @@ export function classify(g: GridData, tiers: Record<string, Tiers>, mode: Mode, 
   const cm = tiers.miss.calibration, cf = tiers.false_alarm.calibration;
   const sm = scaleFor(tiers.miss), sf = scaleFor(tiers.false_alarm);
   return g.lat.map((lat, i) => {
-    const pMiss = calibrate(g.p_miss[i], cm), pFa = calibrate(g.p_fa[i], cf);
+    const pMiss = calibrate(g.p_miss[i], cm, g.lead), pFa = calibrate(g.p_fa[i], cf, g.lead);
     const iM = intensity(pMiss, sm), iF = intensity(pFa, sf);
     let direction: Direction | null = null, strength = 0;
     if (mode === "miss") [direction, strength] = ["miss", iM];
@@ -87,7 +88,17 @@ export function classify(g: GridData, tiers: Record<string, Tiers>, mode: Mode, 
   });
 }
 
-export const inBox = (c: { lat: number; lon: number }, b: Box) =>
+/**
+ * Validation bust rate inside vs outside the coloured area at a cut-off: the share of
+ * coloured cells that really busted, and the rate among all the uncoloured ones.
+ */
+export function splitRates(t: Tiers, cut: number): { inside: number; outside: number; share: number } | null {
+  const c = cutoffs(t.calibration).find((q) => q.p >= cut);
+  if (!c || c.share >= 1) return null;
+  return { inside: c.precision, outside: (t.base_rate * (1 - c.catch)) / (1 - c.share), share: c.share };
+}
+
+export const inBox =(c: { lat: number; lon: number }, b: Box) =>
   c.lat >= b.south && c.lat <= b.north && c.lon >= b.west && c.lon <= b.east;
 
 /** Colour ramps from barely-above-normal (pale, translucent) to most likely (dark). Misses orange, false alarms blue. */

@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { Skeleton } from "@/components/ui/skeleton";
-import { DirectionBadge } from "@/components/desk/panels";
+import { DirectionBadge, SkillCard } from "@/components/desk/panels";
 import { formatInit, formatValid, pct, TARGET_LABELS, tierSentence } from "@/lib/format";
 import { calibrate, level } from "@/lib/risk";
 import type { Direction, Hazard, MonsoonData } from "@/lib/types";
@@ -103,6 +103,7 @@ export function MonsoonView({ hazard, data, lead, showObserved }: { hazard: Haza
               </ul>
             </CardContent>
           </Card>
+          <SkillCard hazard={hazard} labels={TARGET_LABELS} unit="zone forecasts (issue date × lead day)" />
         </div>
       </div>
 

@@ -50,7 +50,7 @@ export function CaseList() {
                     <CardContent className="flex flex-1 flex-col gap-3">
                       <p className="text-sm text-pretty text-muted-foreground">{c.story}</p>
                       <p className="mt-auto flex items-center justify-between text-xs text-muted-foreground tabular-nums">
-                        <span>Issued {formatInit(c.init)} → valid {formatValid(c.init, c.lead)}</span>
+                        <span>Issued {formatInit(c.init)} → valid {formatValid(c.init, c.lead, c.valid_shift)}</span>
                         <span className="flex items-center gap-1 font-medium text-foreground">
                           Open <ArrowRight aria-hidden className="size-3.5 transition-transform group-hover:translate-x-0.5" />
                         </span>

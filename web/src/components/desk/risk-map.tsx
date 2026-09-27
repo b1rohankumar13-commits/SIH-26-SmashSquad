@@ -1,7 +1,7 @@
 "use client";
 
 import type { PickingInfo } from "@deck.gl/core";
-import { PolygonLayer, ScatterplotLayer } from "@deck.gl/layers";
+import { PathLayer, PolygonLayer, ScatterplotLayer } from "@deck.gl/layers";
 import { MapboxOverlay, type MapboxOverlayProps } from "@deck.gl/mapbox";
 import { setWorkerUrl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -10,7 +10,7 @@ import { useMemo } from "react";
 import { Map, useControl } from "react-map-gl/maplibre";
 
 import { RAMP, rampColour, type Cell } from "@/lib/risk";
-import type { Box, Direction, Mode } from "@/lib/types";
+import type { Box, Direction, GefsTrack, Mode, Track } from "@/lib/types";
 
 // Worker served from /public (see scripts/copy-maplibre-worker.mjs).
 setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
@@ -40,7 +40,7 @@ const outcome = (c: Cell) =>
       : "Forecast held";
 
 export function RiskMap({
-  cells, mode, showObserved, showGefs, box, boxTone, label,
+  cells, mode, showObserved, showGefs, box, boxTone, label, tracks, gefsTracks, lead,
 }: {
   cells: Cell[] | null;
   mode: Mode;
@@ -49,6 +49,11 @@ export function RiskMap({
   box?: Box;
   boxTone?: Direction | "neutral";
   label: string;
+  /** Observed low-pressure-system tracks, drawn over the risk cells. */
+  tracks?: Track[];
+  /** GEFS members' forecast storm tracks; dots mark each member's position at `lead`. */
+  gefsTracks?: GefsTrack[];
+  lead?: number;
 }) {
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === "dark";
@@ -84,6 +89,31 @@ export function RiskMap({
         }
       }
     }
+    if (gefsTracks?.length) {
+      const teal: [number, number, number] = dark ? [45, 212, 191] : [13, 148, 136];
+      out.push(new PathLayer<GefsTrack>({
+        id: "gefs-tracks", data: gefsTracks.filter((t) => t.points.length > 1),
+        getPath: (t) => t.points.map((p) => [p[2], p[1]] as [number, number]), getColor: [...teal, 150] as [number, number, number, number],
+        getWidth: 1.5, widthUnits: "pixels", capRounded: true, jointRounded: true,
+      }));
+      out.push(new ScatterplotLayer<{ p: [number, number] }>({
+        id: "gefs-now", data: gefsTracks.flatMap((t) => t.points.filter((p) => p[0] === lead).map((p) => ({ p: [p[2], p[1]] as [number, number] }))),
+        getPosition: (d) => d.p, getRadius: 4, radiusUnits: "pixels", filled: true,
+        getFillColor: [...teal, 230] as [number, number, number, number],
+      }));
+    }
+    if (tracks?.length) {
+      const ink: [number, number, number] = dark ? [250, 250, 250] : [23, 23, 23];
+      out.push(new PathLayer<Track>({
+        id: "tracks", data: tracks, getPath: (t) => t.path, getColor: [...ink, 200] as [number, number, number, number],
+        getWidth: 2, widthUnits: "pixels", capRounded: true, jointRounded: true,
+      }));
+      out.push(new ScatterplotLayer<Track>({
+        id: "track-now", data: tracks, getPosition: (t) => t.now, getRadius: 7, radiusUnits: "pixels",
+        filled: true, getFillColor: dark ? [23, 23, 23, 255] : [255, 255, 255, 255],
+        stroked: true, getLineColor: [...ink, 255] as [number, number, number, number], lineWidthMinPixels: 2.5,
+      }));
+    }
     if (box) {
       const tone = boxTone === "miss" ? [234, 88, 12] : boxTone === "false_alarm" ? [37, 99, 235] : [100, 116, 139];
       out.push(new PolygonLayer({
@@ -94,7 +124,7 @@ export function RiskMap({
       }));
     }
     return out;
-  }, [cells, mode, showObserved, showGefs, box, boxTone, dark]);
+  }, [cells, mode, showObserved, showGefs, box, boxTone, dark, tracks, gefsTracks, lead]);
 
   const tooltip = ({ object }: PickingInfo) => {
     const c = object as Cell | undefined;
