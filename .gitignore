@@ -21,3 +21,4 @@ __pycache__/
 /data/processed/
 /data/metadata/gefs_mv_*.jsonl
 /data/metadata/gefs_tmax_*.jsonl
+/data/metadata/gefs_operational_completed.jsonl
