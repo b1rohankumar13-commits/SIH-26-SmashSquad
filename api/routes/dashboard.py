@@ -67,7 +67,7 @@ def hazards() -> list[dict]:
         meta = {k: v for k, v in h.items() if k != "inits"}
         out.append({"id": key, "n_inits": len(h["inits"]), "first_init": h["inits"][0],
                     "last_init": h["inits"][-1], **meta})
-    order = {"rain": 0, "heatwave": 1, "lps": 2, "monsoon": 3}
+    order = {"rain": 0, "heatwave": 1, "lps": 2, "wd": 3, "monsoon": 4}
     return sorted(out, key=lambda m: order.get(m["id"], 9))
 
 
@@ -124,20 +124,21 @@ def monsoon(init: str = Query(..., pattern=r"^\d{8}$")) -> dict:
             "p_active": _round(a["p_active"][k]), "p_break": _round(a["p_break"][k])}
 
 
-@lru_cache(maxsize=1)
-def _tracks() -> dict[str, list]:
-    path = EXPORT_DIR / "lps" / "tracks.json"
+@lru_cache(maxsize=2)
+def _tracks(hazard: str) -> dict[str, list]:
+    path = EXPORT_DIR / hazard / "tracks.json"
     return json.loads(path.read_text()) if path.exists() else {}
 
 
 @router.get("/tracks")
-def tracks(date: str = Query(..., pattern=r"^\d{8}$"), window: int = Query(3, ge=0, le=10)) -> list[dict]:
-    """ERA5 low-pressure-system tracks active on `date`: each track's fixes within +-window
+def tracks(date: str = Query(..., pattern=r"^\d{8}$"), window: int = Query(3, ge=0, le=10),
+           hazard: str = Query("lps", pattern=r"^(lps|wd)$")) -> list[dict]:
+    """ERA5 low-pressure-system or western-disturbance tracks active on `date`: each track's fixes within +-window
     days (lat/lon/date) plus its position on the day itself."""
     lo = (np.datetime64(f"{date[:4]}-{date[4:6]}-{date[6:]}") - window).astype(str).replace("-", "")
     hi = (np.datetime64(f"{date[:4]}-{date[4:6]}-{date[6:]}") + window).astype(str).replace("-", "")
     out = []
-    for tid, fixes in _tracks().items():
+    for tid, fixes in _tracks(hazard).items():
         now = [f for f in fixes if f[0] == date]
         if not now:
             continue

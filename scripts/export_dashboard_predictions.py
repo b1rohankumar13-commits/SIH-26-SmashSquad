@@ -8,6 +8,8 @@ arrays to outputs/dashboard/<hazard>/ plus an index.json the dashboard reads:
   monsoon    active/break GNN wide head (active_break_gnn_wide.pt), JJAS 2008-2009, MCZ-level
   lps        low-pressure-system strike GNNs, 20 years: average of lps_gnn20.pt and lps_gnn20env.pt
              (+ MJO/climatology channels), val 2016-2019, + ERA5 tracks.json
+  wd         western-disturbance heavy-precipitation misses: WD_CKPTS averaged, Dec-Mar 2016-2019,
+             + ERA5 WD tracks.json
 
 Per-cell hazards (rain, heatwave), arrays [n_init, lead, lat, lon]:
   p_miss.npy, p_fa.npy       float16 model probabilities
@@ -307,6 +309,70 @@ def baseline_lps() -> None:
     save("lps", b_miss=B[..., 0].astype(np.float16), b_fa=B[..., 1].astype(np.float16))
 
 
+# ----------------------------------------------------------------------------- western disturbances
+WD_CACHE = Path(r"D:\sih-data\caches\wd_20yr")
+WD_CKPTS = [PROJECT_ROOT / "outputs" / f"wd_{a}_s{s}.pt" for a in ("gnn", "cnn") for s in (0, 1)]
+WD_TRUTH = PROJECT_ROOT / "data" / "processed" / "wd_truth.npz"
+
+
+def wd_inputs() -> tuple[dict, np.memmap, np.ndarray]:
+    meta = json.loads((WD_CACHE / "meta.json").read_text())
+    X = np.memmap(WD_CACHE / "X.dat", np.float16, "r", shape=(meta["n"], LEADS, LAT, LON, len(meta["channels"])))
+    return meta, X, np.where(~np.asarray(meta["is_train"]))[0]
+
+
+def export_wd_tracks(inits: list[str]) -> None:
+    """ERA5 WD tracker fixes for the validation window (+ lead days), for the map overlay."""
+    z = np.load(WD_TRUTH)
+    dates = (np.datetime64(str(z["epoch"])) + z["day"].astype("timedelta64[D]")).astype(str)
+    dates = np.char.replace(dates, "-", "")
+    last = str(np.datetime64(f"{inits[-1][:4]}-{inits[-1][4:6]}-{inits[-1][6:8]}") + np.timedelta64(LEADS, "D"))
+    keep = (dates >= inits[0][:8]) & (dates <= last.replace("-", ""))
+    tracks: dict[str, list] = {}
+    for d, tr, la, lo in zip(dates[keep], z["track"][keep], z["lat"][keep], z["lon"][keep]):
+        tracks.setdefault(str(int(tr)), []).append([str(d), float(la), float(lo)])
+    (OUT / "wd").mkdir(parents=True, exist_ok=True)
+    (OUT / "wd" / "tracks.json").write_text(json.dumps({k: sorted(v) for k, v in tracks.items()}))
+
+
+def export_wd() -> dict:
+    from scripts.train_heatwave import HeatwaveBustNet
+    meta, X, va = wd_inputs()
+    n = meta["n"]
+    Y = np.fromfile(WD_CACHE / "Y_dir.dat", np.float32).reshape(n, LEADS, LAT, LON, 2)
+    Pens = np.fromfile(WD_CACHE / "P.dat", np.float32).reshape(n, LEADS, LAT, LON)
+    acc = np.zeros((len(va), LEADS, LAT, LON, 2), np.float32)
+    for path in WD_CKPTS:
+        st = torch.load(path, map_location=DEV)
+        m = HeatwaveBustNet(st["arch"], len(meta["channels"]), st["wide_idx"]).to(DEV)
+        m.load_state_dict(st["model_state"]); m.eval()
+        with torch.no_grad():
+            for s in range(0, len(va), 8):
+                acc[s:s + 8] += m(torch.from_numpy(np.asarray(X[va[s:s + 8]], np.float32)).to(DEV)).cpu().numpy()
+    P = (acc / len(WD_CKPTS)).astype(np.float16)
+    inits = [meta["inits"][i][:8] for i in va]
+    obs_m, obs_f = as_obs(Y[va][..., 0]), as_obs(Y[va][..., 1])
+    save("wd", p_miss=P[..., 0], p_fa=P[..., 1], obs_miss=obs_m, obs_fa=obs_f, ens_prob=Pens[va].astype(np.float16))
+    export_wd_tracks(inits)
+    fin = obs_m >= 0
+    archs = sorted({torch.load(q, map_location="cpu")["arch"].upper() for q in WD_CKPTS})
+    return {"label": "Western disturbances", "kind": "grid", "inits": inits,
+            "event": "24-h precipitation >= 35.6 mm over NW India with a western disturbance nearby",
+            "model": f"{' + '.join(archs)}, {len(WD_CKPTS)} checkpoints averaged, trained on Dec-Mar 2000-2015",
+            "truth": "IMD 0.25 deg gridded rainfall + ERA5 500 hPa vorticity WD tracker",
+            "val_period": f"{inits[0]}..{inits[-1]} (Dec-Mar)",
+            "tiers": {"miss": tiers(obs_m[fin], P[..., 0][fin].astype(np.float32), lead_of(obs_m)[fin]),
+                      "false_alarm": tiers(obs_f[fin], P[..., 1][fin].astype(np.float32), lead_of(obs_m)[fin])},
+            "notable_inits": notable(obs_m, obs_f, inits)}
+
+
+def baseline_wd() -> None:
+    meta, X, va = wd_inputs()
+    ckpts = [torch.load(q, map_location="cpu") for q in WD_CKPTS]
+    B = np.stack([heatwave_baseline(np.asarray(X[i], np.float32), ckpts) for i in va])
+    save("wd", b_miss=B[..., 0].astype(np.float16), b_fa=B[..., 1].astype(np.float16))
+
+
 # ----------------------------------------------------------------------------- monsoon
 def export_monsoon() -> dict:
     from scripts.train_active_break import AUX, CACHE, CH, LABELS, TARGETS, RegimeBustNet
@@ -492,7 +558,7 @@ def add_skill(index: dict) -> None:
 
 
 BASELINES = {"heatwave": lambda: baseline_heatwave(), "monsoon": lambda: baseline_monsoon(),
-             "lps": lambda: baseline_lps(), "rain": lambda: baseline_rain()}
+             "lps": lambda: baseline_lps(), "rain": lambda: baseline_rain(), "wd": lambda: baseline_wd()}
 
 
 def build_skill(only: list[str] | None = None) -> None:
@@ -537,7 +603,7 @@ def report(index: dict) -> None:
 
 
 EXPORTS = {"heatwave": lambda: export_heatwave(), "lps": lambda: export_lps(),
-           "monsoon": lambda: export_monsoon(), "rain": lambda: export_rain()}
+           "monsoon": lambda: export_monsoon(), "rain": lambda: export_rain(), "wd": lambda: export_wd()}
 
 
 def main():

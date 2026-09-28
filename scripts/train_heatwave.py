@@ -1,4 +1,6 @@
 """Heatwave-bust bake-off: GNN (flat / multi-mesh) vs ConvLSTM vs CNN on the heatwave cache.
+Also trains the western-disturbance model on its cache (--name wd); any cache written in this
+layout works (meta.json with channels, wide_channels, is_train; float16 X read from disk).
 
 Same cache, labels, head and loop; only the spatial(-temporal) encoder differs:
   gnn:      GraphSAGE + TCN (GridGraphNet encoder), flat 0.5 deg 8-neighbour graph
@@ -83,6 +85,18 @@ class HeatwaveBustNet(nn.Module):
         return torch.sigmoid(self.wide(x[..., self.wide_idx]) + self.deep(self.encode(x)))
 
 
+def gather(X, rows: np.ndarray, pick: np.ndarray, ch: list[int], chunk: int = 64) -> np.ndarray:
+    """X[rows][tuple(pick.T)][..., ch] without loading X[rows]: pick is [k, 4] (row pos, lead, lat, lon)."""
+    out = np.empty((len(pick), len(ch)), np.float32)
+    for s in range(0, len(rows), chunk):
+        sel = np.where((pick[:, 0] >= s) & (pick[:, 0] < s + chunk))[0]
+        if len(sel):
+            blk = np.asarray(X[rows[s:s + chunk]][..., ch], np.float32)
+            q = pick[sel]
+            out[sel] = blk[q[:, 0] - s, q[:, 1], q[:, 2], q[:, 3]]
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--arch", choices=["gnn", "multimesh", "convlstm", "cnn"], required=True)
@@ -95,12 +109,16 @@ def main():
     ap.add_argument("--select", choices=["miss", "mean"], default="mean",
                     help="checkpoint/early-stop metric: miss PR-AUC or mean(miss, false_alarm)")
     ap.add_argument("--tag", default="", help="suffix for output names, e.g. _s1")
+    ap.add_argument("--name", default="heatwave", help="output prefix: outputs/<name>_<arch><tag>.pt")
     args = ap.parse_args()
     torch.manual_seed(args.seed); np.random.seed(args.seed)
     cache = Path(args.cache_dir)
     meta = json.loads((cache / "meta.json").read_text())
     n, L, H, W, C = meta["n"], meta["leads"], meta["lat"], meta["lon"], len(meta["channels"])
-    X = np.fromfile(cache / "X.dat", np.float32).reshape(n, L, H, W, C)  # ~5 GB, fits in RAM
+    if meta.get("dtype") == "float16":  # too big for RAM: read batches from disk
+        X = np.memmap(cache / "X.dat", np.float16, "r", shape=(n, L, H, W, C))
+    else:
+        X = np.fromfile(cache / "X.dat", np.float32).reshape(n, L, H, W, C)  # ~5 GB, fits in RAM
     Y = np.fromfile(cache / "Y_dir.dat", np.float32).reshape(n, L, H, W, 2)
     P = np.fromfile(cache / "P.dat", np.float32).reshape(n, L, H, W)
     is_tr = np.asarray(meta["is_train"])
@@ -110,7 +128,7 @@ def main():
 
     # --- frozen logistic baseline on training cells (all positives + sampled negatives, balanced)
     rng = np.random.default_rng(args.seed)
-    ytr = Y[tr_idx]; xw = X[tr_idx][..., wide_idx]
+    ytr = Y[tr_idx]
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     model = HeatwaveBustNet(args.arch, C, wide_idx).to(dev)
     pw = []
@@ -121,7 +139,7 @@ def main():
             pw.append((len(neg)) / max(len(pos), 1))
             neg = neg[rng.choice(len(neg), min(len(neg), 20 * max(len(pos), 1000)), replace=False)]
             pick = np.concatenate([pos, neg]); ys = np.r_[np.ones(len(pos)), np.zeros(len(neg))]
-            feats = xw[tuple(pick.T)]
+            feats = gather(X, tr_idx, pick, wide_idx)
             lr = LogisticRegression(max_iter=2000, class_weight="balanced").fit(feats, ys)
             model.wide.weight[j] = torch.tensor(lr.coef_[0], dtype=torch.float32)
             model.wide.bias[j] = float(lr.intercept_[0])
@@ -129,15 +147,17 @@ def main():
                   f"(pos_weight {pw[-1]:.0f})", flush=True)
     for prm in model.wide.parameters():
         prm.requires_grad = False
-    del ytr, xw
+    del ytr
     pwt = torch.tensor(pw, device=dev, dtype=torch.float32)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"trainable params {n_params:,}", flush=True)
 
     # trivial same-task rules on val: miss = rank by bias-corrected mean departure where P<0.2; fa = ensemble P
     yv = Y[va_idx]; fin_v = np.isfinite(yv[..., 0])
-    dep_ch = meta["channels"].index("tmax_departure")
-    rules = {"miss": average_precision_score(yv[..., 0][fin_v], X[va_idx][..., dep_ch][fin_v]),
+    dep_ch = meta["channels"].index(meta.get("rule_channel", "tmax_departure"))
+    rule_x = np.concatenate([np.asarray(X[va_idx[s:s + 64]][..., dep_ch], np.float32)
+                             for s in range(0, len(va_idx), 64)])
+    rules = {"miss": average_precision_score(yv[..., 0][fin_v], rule_x[fin_v]),
              "false_alarm": average_precision_score(yv[..., 1][fin_v], P[va_idx][fin_v])}
     base_rate = {t: float(yv[..., j][fin_v].mean()) for j, t in enumerate(TARGETS)}
     print(f"val base rate miss {100*base_rate['miss']:.3f}% fa {100*base_rate['false_alarm']:.3f}% | "
@@ -148,7 +168,7 @@ def main():
     def to_dev(idx):
         yb = torch.from_numpy(Y[idx]).to(dev)
         m = torch.isfinite(yb).float()
-        return torch.from_numpy(X[idx]).to(dev), torch.nan_to_num(yb), m
+        return torch.from_numpy(np.asarray(X[idx], np.float32)).to(dev), torch.nan_to_num(yb), m
 
     def evaluate():
         model.eval(); ps = []
@@ -158,8 +178,8 @@ def main():
         pr = np.concatenate(ps)
         return {t: float(average_precision_score(yv[..., j][fin_v], pr[..., j][fin_v])) for j, t in enumerate(TARGETS)}
 
-    out_path = PROJECT_ROOT / "outputs" / f"heatwave_{args.arch}{args.tag}.pt"
-    hist_path = PROJECT_ROOT / "outputs" / f"heatwave_{args.arch}{args.tag}_history.json"
+    out_path = PROJECT_ROOT / "outputs" / f"{args.name}_{args.arch}{args.tag}.pt"
+    hist_path = PROJECT_ROOT / "outputs" / f"{args.name}_{args.arch}{args.tag}_history.json"
     hist = {"arch": args.arch, "config": vars(args), "cache": str(cache), "params_trainable": n_params,
             "val_base_rate": base_rate, "rule_pr_auc": rules, "epochs": []}
     a0 = evaluate()

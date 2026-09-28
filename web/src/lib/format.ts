@@ -33,7 +33,7 @@ export function tierSentence(t: Tier, direction: "miss" | "false_alarm", event: 
   return `${oneIn(t.precision)} flagged cells turned out to be ${what} (${lift}); catches ${pct(t.catch_rate)} of them.`;
 }
 
-export const EVENT_WORD: Record<string, string> = { rain: "extreme rain", heatwave: "heatwave", lps: "storm activity", monsoon: "spell" };
+export const EVENT_WORD: Record<string, string> = { rain: "extreme rain", heatwave: "heatwave", lps: "storm activity", wd: "heavy western-disturbance rain", monsoon: "spell" };
 
 export const TARGET_LABELS: Record<string, string> = {
   miss_break: "Missed break spell",

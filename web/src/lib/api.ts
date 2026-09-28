@@ -35,8 +35,8 @@ export const useLeads = (hazard?: string, init?: string) =>
 export const useMonsoon = (init?: string) =>
   useSWR<MonsoonData>(init ? `/api/monsoon?init=${init}` : null, fetcher, opts);
 
-export const useTracks = (date?: string) =>
-  useSWR<Track[]>(date ? `/api/tracks?date=${date}` : null, fetcher, opts);
+export const useTracks = (hazard?: string, date?: string) =>
+  useSWR<Track[]>(hazard && date ? `/api/tracks?hazard=${hazard}&date=${date}` : null, fetcher, opts);
 
 export const useExplain = (hazard?: string, init?: string, lead?: number) =>
   useSWR<Explanation>(hazard && init && lead ? `/api/explain/${hazard}?init=${init}&lead=${lead}` : null, fetcher, opts);

@@ -13,6 +13,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCases, useExplain, useGrid, useHazards, useInits, useLeads, useMonsoon, useTracks } from "@/lib/api";
 import { EVENT_WORD, formatInit, formatValid, oneIn, validDate, ymd } from "@/lib/format";
+
+// Hazards with an observed-system track overlay (ERA5 tracker output).
+const TRACKED = new Set(["lps", "wd"]);
 import { atIntensity, classify, scaleFor, SHOW_FROM, type Scale, type Thresholds } from "@/lib/risk";
 import type { CaseStudy } from "@/lib/types";
 import { useDeskState } from "@/lib/use-desk-state";
@@ -76,7 +79,8 @@ export function Desk() {
   const event = EVENT_WORD[hazard?.id ?? "rain"] ?? "event";
   const shift = hazard?.valid_shift;
   const explain = useExplain(hazard?.kind === "grid" ? hazard.id : undefined, init, state.lead);
-  const tracks = useTracks(hazard?.id === "lps" && init ? ymd(validDate(init, state.lead, shift)) : undefined);
+  const tracked = TRACKED.has(hazard?.id ?? "");
+  const tracks = useTracks(tracked ? hazard?.id : undefined, init ? ymd(validDate(init, state.lead, shift)) : undefined);
   const error = hazards.error ?? inits.error ?? grid.error ?? monsoon.error;
 
   return (
@@ -118,7 +122,7 @@ export function Desk() {
                   <CardContent>
                     <RiskMap
                       cells={cells} mode={mode} showObserved={state.observed}
-                      tracks={hazard.id === "lps" && state.observed ? tracks.data : undefined}
+                      tracks={tracked && state.observed ? tracks.data : undefined}
                       box={activeCase?.box} boxTone={activeCase?.mode} areas={explain.data}
                       label={cells ? `${hazard.label} bust-risk map for ${formatValid(init!, state.lead, shift)}: ${cells.filter((c) => c.missFlag).length} cells flagged for a likely miss, ${cells.filter((c) => c.faFlag).length} for a likely false alarm.` : "Loading map"}
                     />
@@ -127,7 +131,7 @@ export function Desk() {
                 <div className="flex flex-col gap-4">
                   <ExplainCard data={explain.data} mode={mode} />
                   {scales && <MapLegend scales={scales} mode={mode} event={event} showObserved={state.observed}
-                    showTracks={hazard.id === "lps" && state.observed} />}
+                    showTracks={tracked && state.observed} />}
                   <ModelFacts hazard={hazard} falseAlarmNote={hazard.id === "rain"
                     ? `False alarms are largely visible in GEFS itself: when most members call ${event}, it doesn’t happen about ${oneIn(hazard.tiers.false_alarm.high.precision)} times. The model’s value is mainly on misses — events GEFS gave no warning of.`
                     : undefined} />

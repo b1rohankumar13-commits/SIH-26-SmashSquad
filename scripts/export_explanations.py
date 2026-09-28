@@ -13,7 +13,7 @@ the attributions. Non-meteorological inputs (lead, land mask, day-of-year sin/co
 Writes outputs/dashboard/<hazard>/explain.json:
   {init: {lead: {"miss" | "false_alarm": [{lat, lon, cells, expected, box, drivers: [{name, share, value}]}]}}}
 
-    python -m scripts.export_explanations            # rain, heatwave, lps
+    python -m scripts.export_explanations            # rain, heatwave, lps, wd
     python -m scripts.export_explanations --only lps
 """
 
@@ -29,16 +29,18 @@ import torch
 from scipy import ndimage
 
 from scripts.export_dashboard_predictions import (
-    DEV, LAT, LEADS, LON, LPS_CACHE, LPS_CKPTS, OUT, heatwave_checkpoints, lps_features, lps_inputs, rain_rows,
+    DEV, LAT, LEADS, LON, LPS_CACHE, LPS_CKPTS, OUT, WD_CACHE, WD_CKPTS, heatwave_checkpoints, lps_features,
+    lps_inputs, rain_rows, wd_inputs,
 )
 from src.models.graphnet.grid_graph import canonical_centres
 
 SHOW_FROM = 0.5
 TOP_AREAS, TOP_DRIVERS, MIN_CELLS = 3, 4, 3
-SKIP = {"lead01", "land", "sin_doy", "cos_doy"}
+SKIP = {"lead01", "land", "region", "sin_doy", "cos_doy"}
 
 mm = lambda v: f"{v:.0f} mm"
-pct = lambda v: f"{100 * v:.0f}%"
+logmm = lambda v: f"{np.expm1(v):.0f} mm"  # channels stored as log1p(mm)
+pct = lambda v: f"{100 * max(v, 0.0):.0f}%"  # float noise can give -0%
 degc = lambda v: f"{v:.1f} °C"
 dep = lambda v: f"{v:+.1f} °C vs normal"
 
@@ -77,6 +79,20 @@ LPS_GROUPS = {
     "Systems GEFS sees in the domain": (["n_systems_domain"], "n_systems_domain", None),
     "MJO at issue time": (["rmm1", "rmm2", "rmm_amp"], "rmm_amp", None),
     "Seasonal storm climatology": (["clim_strike300"], "clim_strike300", pct),
+}
+WD_GROUPS = {
+    "Forecast precipitation": (["rain_mean", "rain_max"], "rain_mean", logmm),
+    "Members disagree on precipitation": (["rain_spread"], "rain_spread", logmm),
+    "GEFS heavy-precipitation probability": (["p_event", "p_moderate"], "p_event", pct),
+    "Heavy precipitation forecast nearby": (["p_event_nbhd"], "p_event_nbhd", pct),
+    "WD in GEFS members within 600 km": (["p_wd_near"], "p_wd_near", pct),
+    "500 hPa trough in GEFS": (["zeta500_mean", "zeta500_spread", "gh500_mean", "gh500_spread",
+                               "ug500_mean", "vg500_mean"], "zeta500_mean", None),
+    "WD approaching from the west (ERA5 at issue)": (["upstream_zeta", "upstream_lon"], "upstream_zeta", None),
+    "Observed precipitation yesterday": (["obs_rain_d-1"], "obs_rain_d-1", logmm),
+    "850 hPa moisture": (["q850_mean"], "q850_mean", None),
+    "850 hPa winds": (["u850_mean", "v850_mean"], "u850_mean", None),
+    "Sea-level pressure": (["mslp_mean", "mslp_spread"], "mslp_mean", None),
 }
 
 
@@ -259,12 +275,28 @@ def run_lps(index):
                      raw_reader(names, mean, sd, lambda r: full(r)), found, len(va), "lps")
 
 
+def run_wd(index):
+    from scripts.train_heatwave import HeatwaveBustNet
+    meta, X, va = wd_inputs()
+    C = len(meta["channels"])
+    std = np.load(WD_CACHE / "standardizer.npz")
+    models = []
+    for path in WD_CKPTS:
+        st = torch.load(path, map_location=DEV)
+        m = HeatwaveBustNet(st["arch"], C, st["wide_idx"]).to(DEV); m.load_state_dict(st["model_state"]); m.eval()
+        models.append((m, None))
+    read = lambda r: np.asarray(X[r], np.float32)
+    found, inits = areas("wd", index); _INITS["wd"] = inits
+    return attribute(models, lambda r, _: read(r), list(va), meta["channels"], WD_GROUPS,
+                     raw_reader(meta["channels"], std["mean"], std["std"], read), found, len(va), "wd")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--only", default="rain,heatwave,lps")
+    ap.add_argument("--only", default="rain,heatwave,lps,wd")
     args = ap.parse_args()
     index = json.loads((OUT / "index.json").read_text())
-    for h, fn in (("heatwave", run_heatwave), ("lps", run_lps), ("rain", run_rain)):
+    for h, fn in (("heatwave", run_heatwave), ("lps", run_lps), ("rain", run_rain), ("wd", run_wd)):
         if h in args.only.split(","):
             t0 = time.time()
             res = fn(index)
