@@ -148,6 +148,39 @@ def tracks(date: str = Query(..., pattern=r"^\d{8}$"), window: int = Query(3, ge
     return out
 
 
+@lru_cache(maxsize=1)
+def _subdivisions() -> dict:
+    path = EXPORT_DIR / "subdivisions.geojson"
+    if not path.exists():
+        raise HTTPException(503, "No region export. Run scripts/export_regions.py.")
+    return json.loads(path.read_text())
+
+
+@router.get("/subdivisions")
+def subdivisions() -> dict:
+    """IMD meteorological subdivision boundaries (GeoJSON, WGS84)."""
+    return _subdivisions()
+
+
+@router.get("/regions/{hazard}")
+def regions(hazard: str, init: str = Query(..., pattern=r"^\d{8}$")) -> dict:
+    """Chance GEFS busts somewhere in each subdivision, Days 1-9, from scripts/export_regions.py.
+    Arrays are [lead][region]; obs -1 where the subdivision has no observed cell; flag 1 where the
+    grid map colours a cell in the subdivision (only those are shaded)."""
+    h = _hazard(hazard)
+    if "regions" not in h:
+        raise HTTPException(404, f"No region-wise risk for {hazard}.")
+    k = _init_pos(hazard, init)
+    a = _arrays(hazard)
+    names = [f["properties"]["name"] for f in _subdivisions()["features"]]
+    return {"init": init, "names": names, "covered": h["regions"]["covered"],
+            "p_miss": _round(a["region_p_miss"][k], 3), "p_fa": _round(a["region_p_fa"][k], 3),
+            "obs_miss": np.asarray(a["region_obs_miss"][k]).astype(int).tolist(),
+            "obs_fa": np.asarray(a["region_obs_fa"][k]).astype(int).tolist(),
+            "flag_miss": np.asarray(a["region_flag_miss"][k]).astype(int).tolist(),
+            "flag_fa": np.asarray(a["region_flag_fa"][k]).astype(int).tolist()}
+
+
 @lru_cache(maxsize=4)
 def _explain(hazard: str) -> dict:
     path = EXPORT_DIR / hazard / "explain.json"

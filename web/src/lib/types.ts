@@ -71,7 +71,25 @@ export interface Hazard {
   region?: string;
   /** Days added to init + lead to get the valid date: -1 for daily totals (default), 0 for 00 UTC snapshots. */
   valid_shift?: number;
+  /** Subdivision-level risk (scripts/export_regions.py): which subdivisions have observed cells, and skill vs GEFS alone. */
+  regions?: { covered: number[]; skill: Record<Direction, { model: Pick<Scores, "auroc" | "pr_auc">; baseline: Pick<Scores, "auroc" | "pr_auc">; base_rate: number; n: number }> };
 }
+
+/** Chance GEFS busts somewhere in each IMD subdivision; arrays are [lead][region], obs -1 = no observed cell. */
+export interface RegionData {
+  init: string;
+  names: string[];
+  covered: number[];
+  p_miss: number[][];
+  p_fa: number[][];
+  obs_miss: number[][];
+  obs_fa: number[][];
+  /** 1 where the grid map colours a cell in the subdivision; only those are shaded. */
+  flag_miss: number[][];
+  flag_fa: number[][];
+}
+
+export type View = "cells" | "regions";
 
 /** A flagged area on one map and the drivers that push its risk up (gradient x input, see export_explanations.py). */
 export interface ExplainedArea {

@@ -62,4 +62,21 @@ CASES = {
         "story": ("Bulbul tracked north through the Bay to hit West Bengal and Bangladesh on 9 November 2019. "
                   "Issued 3 November for 7 November, GEFS showed no system over the central Bay."),
     },
+    # Western-disturbance validation winters are Dec-Mar 2016-2019 (trained on 2000-2015).
+    "wd_feb_2019_d6": {
+        "title": "Western disturbance, Feb 2019 · 5 days ahead",
+        "hazard": "wd", "init": "20190203", "lead": 6, "mode": "miss",
+        "region": "Jammu & Kashmir – Himachal", "box": {"south": 30.0, "north": 34.5, "west": 73.5, "east": 79.5},
+        "story": ("A strong western disturbance swept across north India in early February 2019, bringing heavy "
+                  "snow and rain to the western Himalaya and a hailstorm to Delhi on 7 February. Issued 3 February "
+                  "for 8 February, GEFS gave most of the hills under a 20% chance of heavy precipitation."),
+    },
+    "wd_dec_2019_d4": {
+        "title": "Western disturbance, Dec 2019 · 3 days ahead",
+        "hazard": "wd", "init": "20191211", "lead": 4, "mode": "miss",
+        "region": "north-west India", "box": {"south": 24.5, "north": 35.0, "west": 74.5, "east": 84.5},
+        "story": ("A western disturbance brought widespread rain to the north-west plains and snow to the hills "
+                  "in mid-December 2019. Issued 11 December for 14 December, GEFS missed most of the heavy "
+                  "precipitation."),
+    },
 }

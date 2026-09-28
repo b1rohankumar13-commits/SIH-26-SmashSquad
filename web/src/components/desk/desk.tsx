@@ -7,11 +7,12 @@ import { useEffect, useMemo } from "react";
 import { AppShell } from "@/components/app-shell";
 import { CasePicker, DeskControls } from "@/components/desk/controls";
 import { MonsoonView } from "@/components/desk/monsoon-view";
+import { RegionCard } from "@/components/desk/region-card";
 import { CaseCard, ExplainCard, GridMetrics, LeadChart, MapLegend, MetricsSkeleton, ModelFacts, SkillCard } from "@/components/desk/panels";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useCases, useExplain, useGrid, useHazards, useInits, useLeads, useMonsoon, useTracks } from "@/lib/api";
+import { useCases, useExplain, useGrid, useHazards, useInits, useLeads, useMonsoon, useRegions, useSubdivisions, useTracks } from "@/lib/api";
 import { EVENT_WORD, formatInit, formatValid, oneIn, validDate, ymd } from "@/lib/format";
 
 // Hazards with an observed-system track overlay (ERA5 tracker output).
@@ -81,6 +82,15 @@ export function Desk() {
   const explain = useExplain(hazard?.kind === "grid" ? hazard.id : undefined, init, state.lead);
   const tracked = TRACKED.has(hazard?.id ?? "");
   const tracks = useTracks(tracked ? hazard?.id : undefined, init ? ymd(validDate(init, state.lead, shift)) : undefined);
+  const hasRegions = hazard?.kind === "grid" && !!hazard.regions;
+  const regions = useRegions(hasRegions ? hazard?.id : undefined, init);
+  const geo = useSubdivisions(hasRegions);
+  const L = state.lead - 1;
+  const regionLayer = useMemo(() => (geo.data && regions.data ? {
+    geo: geo.data, pMiss: regions.data.p_miss[L], pFa: regions.data.p_fa[L],
+    obsMiss: regions.data.obs_miss[L], obsFa: regions.data.obs_fa[L],
+    flagMiss: regions.data.flag_miss[L], flagFa: regions.data.flag_fa[L],
+  } : undefined), [geo.data, regions.data, L]);
   const error = hazards.error ?? inits.error ?? grid.error ?? monsoon.error;
 
   return (
@@ -123,7 +133,8 @@ export function Desk() {
                     <RiskMap
                       cells={cells} mode={mode} showObserved={state.observed}
                       tracks={tracked && state.observed ? tracks.data : undefined}
-                      box={activeCase?.box} boxTone={activeCase?.mode} areas={explain.data}
+                      box={activeCase?.box} boxTone={activeCase?.mode} areas={state.view === "cells" ? explain.data : undefined}
+                      view={hasRegions ? state.view : "cells"} regions={regionLayer}
                       label={cells ? `${hazard.label} bust-risk map for ${formatValid(init!, state.lead, shift)}: ${cells.filter((c) => c.missFlag).length} cells flagged for a likely miss, ${cells.filter((c) => c.faFlag).length} for a likely false alarm.` : "Loading map"}
                     />
                   </CardContent>
@@ -131,13 +142,15 @@ export function Desk() {
                 <div className="flex flex-col gap-4">
                   <ExplainCard data={explain.data} mode={mode} />
                   {scales && <MapLegend scales={scales} mode={mode} event={event} showObserved={state.observed}
-                    showTracks={tracked && state.observed} />}
+                    showTracks={tracked && state.observed} byRegion={hasRegions && state.view === "regions"} />}
                   <ModelFacts hazard={hazard} falseAlarmNote={hazard.id === "rain"
                     ? `False alarms are largely visible in GEFS itself: when most members call ${event}, it doesn’t happen about ${oneIn(hazard.tiers.false_alarm.high.precision)} times. The model’s value is mainly on misses — events GEFS gave no warning of.`
                     : undefined} />
                   <SkillCard hazard={hazard} labels={DIRECTION_LABEL} cuts={thresholds ?? undefined} />
                 </div>
               </div>
+              {hasRegions && <RegionCard hazard={hazard} data={regions.data} mode={mode} lead={state.lead}
+                showObserved={state.observed} onLead={(lead) => update({ lead })} />}
               <LeadChart rows={leads.data} mode={mode} showObserved={state.observed} lead={state.lead} init={init!} shift={shift} />
             </>
           )}

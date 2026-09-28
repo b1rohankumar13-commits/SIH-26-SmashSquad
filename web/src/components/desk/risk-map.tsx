@@ -1,7 +1,7 @@
 "use client";
 
 import type { PickingInfo } from "@deck.gl/core";
-import { PathLayer, PolygonLayer, ScatterplotLayer, TextLayer } from "@deck.gl/layers";
+import { GeoJsonLayer, PathLayer, PolygonLayer, ScatterplotLayer, TextLayer } from "@deck.gl/layers";
 import { MapboxOverlay, type MapboxOverlayProps } from "@deck.gl/mapbox";
 import { setWorkerUrl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -9,9 +9,9 @@ import { useTheme } from "next-themes";
 import { useMemo } from "react";
 import { Map, useControl } from "react-map-gl/maplibre";
 
-import { RAMP, rampColour, type Cell } from "@/lib/risk";
+import { pctLabel, RAMP, rampColour, regionTone, type Cell } from "@/lib/risk";
 import { areaLabel } from "@/components/desk/panels";
-import type { Box, Direction, Explanation, Mode, Track } from "@/lib/types";
+import type { Box, Direction, Explanation, Mode, Track, View } from "@/lib/types";
 
 // Worker served from /public (see scripts/copy-maplibre-worker.mjs).
 setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
@@ -35,13 +35,30 @@ const square = (c: Cell) => [
   [c.lon - H, c.lat - H], [c.lon + H, c.lat - H], [c.lon + H, c.lat + H], [c.lon - H, c.lat + H],
 ];
 
+/** Subdivision risk for the shown lead, indexed like the GeoJSON features. */
+export interface RegionLayer {
+  geo: GeoJSON.FeatureCollection;
+  pMiss: number[];
+  pFa: number[];
+  obsMiss: number[];
+  obsFa: number[];
+  flagMiss: number[];
+  flagFa: number[];
+}
+
+type RegionFeature = GeoJSON.Feature<GeoJSON.Geometry, { id: number; name: string }>;
+
+const regionOutcome = (m: number, f: number) =>
+  m < 0 ? "No observations here" : m === 1 && f === 1 ? "GEFS missed some events and over-called others"
+    : m === 1 ? "Missed: an event GEFS said no to happened" : f === 1 ? "False alarm: GEFS said yes, no event" : "Forecast held";
+
 const outcome = (c: Cell) =>
   c.obsMiss ? "Missed: event happened, GEFS said no"
     : c.obsFa ? "False alarm: GEFS said yes, no event"
       : "Forecast held";
 
 export function RiskMap({
-  cells, mode, showObserved, box, boxTone, label, tracks, areas,
+  cells, mode, showObserved, box, boxTone, label, tracks, areas, view = "cells", regions,
 }: {
   cells: Cell[] | null;
   mode: Mode;
@@ -53,13 +70,29 @@ export function RiskMap({
   tracks?: Track[];
   /** Explained areas, marked M1/F1... at their centres to match the "Why these areas?" card. */
   areas?: Explanation;
+  /** Colour subdivisions by bust chance instead of cells; outlines are drawn either way. */
+  view?: View;
+  regions?: RegionLayer;
 }) {
   const { resolvedTheme } = useTheme();
   const dark = resolvedTheme === "dark";
 
   const layers = useMemo(() => {
     const out = [];
-    if (cells) {
+    const byRegion = view === "regions" && regions;
+    if (byRegion) {
+      out.push(new GeoJsonLayer<{ id: number; name: string }>({
+        id: "region-risk", data: regions.geo as never, pickable: true, stroked: false, filled: true,
+        getFillColor: (f) => {
+          const i = (f as RegionFeature).properties.id;
+          const t = regions.obsMiss[i] < 0 ? null
+            : regionTone(regions.pMiss[i], regions.pFa[i], regions.flagMiss[i] === 1, regions.flagFa[i] === 1, mode);
+          return t ? rampColour(t.direction, t.strength) : [0, 0, 0, 0];
+        },
+        updateTriggers: { getFillColor: [regions, mode] },
+      }));
+    }
+    if (cells && !byRegion) {
       out.push(new PolygonLayer<Cell>({
         id: "risk", data: cells.filter((c) => c.direction !== null), getPolygon: square, pickable: true,
         getFillColor: (c) => rampColour(c.direction!, c.strength),
@@ -70,6 +103,14 @@ export function RiskMap({
       out.push(new PolygonLayer<Cell>({
         id: "hover", data: cells, getPolygon: square, pickable: true, stroked: false, getFillColor: [0, 0, 0, 0],
       }));
+    }
+    if (regions) {
+      out.push(new GeoJsonLayer({
+        id: "region-lines", data: regions.geo as never, filled: false, stroked: true, lineWidthUnits: "pixels",
+        getLineWidth: byRegion ? 1 : 0.6, getLineColor: dark ? [255, 255, 255, byRegion ? 90 : 45] : [64, 64, 64, byRegion ? 110 : 60],
+      }));
+    }
+    if (cells) {
       if (showObserved) {
         for (const d of (mode === "both" ? ["miss", "false_alarm"] : [mode]) as Direction[]) {
           out.push(new ScatterplotLayer<Cell>({
@@ -113,9 +154,24 @@ export function RiskMap({
       }));
     }
     return out;
-  }, [cells, mode, showObserved, box, boxTone, dark, tracks, areas]);
+  }, [cells, mode, showObserved, box, boxTone, dark, tracks, areas, view, regions]);
 
-  const tooltip = ({ object }: PickingInfo) => {
+  const style = {
+    background: dark ? "#171717" : "#ffffff", color: dark ? "#fafafa" : "#0a0a0a",
+    border: "1px solid rgba(127,127,127,.25)", borderRadius: "8px", padding: "8px 10px",
+    boxShadow: "0 1px 2px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.12)",
+  };
+  const tooltip = ({ object, layer }: PickingInfo) => {
+    if (layer?.id === "region-risk" && regions && object) {
+      const { id, name } = (object as RegionFeature).properties;
+      if (regions.obsMiss[id] < 0) return { html: `<b>${name}</b><br/>Not covered for this hazard`, style };
+      return {
+        html: `<div style="font:12px/1.45 var(--font-sans),system-ui;font-variant-numeric:tabular-nums">
+          <b>${name}</b><br/>Chance GEFS misses an event here ${pctLabel(regions.pMiss[id])} · over-calls one ${pctLabel(regions.pFa[id])}<br/>
+          ${showObserved ? regionOutcome(regions.obsMiss[id], regions.obsFa[id]) : ""}</div>`,
+        style,
+      };
+    }
     const c = object as Cell | undefined;
     if (!c || c.pMiss === undefined) return null;
     return {
@@ -123,9 +179,7 @@ export function RiskMap({
         <b>${c.lat.toFixed(2)}°N, ${c.lon.toFixed(2)}°E</b><br/>
         Chance of a miss ${(c.pMiss * 100).toFixed(1)}% · of a false alarm ${(c.pFa * 100).toFixed(1)}%<br/>
         GEFS event probability ${(c.ens * 100).toFixed(0)}%<br/>${outcome(c)}</div>`,
-      style: { background: dark ? "#171717" : "#ffffff", color: dark ? "#fafafa" : "#0a0a0a",
-        border: "1px solid rgba(127,127,127,.25)", borderRadius: "8px", padding: "8px 10px",
-        boxShadow: "0 1px 2px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.12)" },
+      style,
     };
   };
 

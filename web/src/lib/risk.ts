@@ -125,3 +125,19 @@ export function level(p: number, t: Tiers): Level {
   if (t.elevated && p >= t.elevated.threshold) return 1;
   return 0;
 }
+
+/**
+ * Region view: a subdivision is shaded only where the grid map colours at least one of its cells
+ * (3+ flagged cells, so the two views never disagree), with intensity from the chance GEFS busts somewhere in it
+ * (darkest at 70%).
+ */
+export const REGION_CAP = 0.7;
+
+export function regionTone(pMiss: number, pFa: number, flagMiss: boolean, flagFa: boolean, mode: Mode):
+  { direction: Direction; strength: number } | null {
+  const m = flagMiss && mode !== "false_alarm" ? pMiss : -1;
+  const f = flagFa && mode !== "miss" ? pFa : -1;
+  if (m < 0 && f < 0) return null;
+  const [direction, p] = m >= f ? ["miss", m] as const : ["false_alarm", f] as const;
+  return { direction, strength: Math.min(1, p / REGION_CAP) };
+}

@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSepa
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { formatInit } from "@/lib/format";
-import type { CaseStudy, Hazard, Mode } from "@/lib/types";
+import type { CaseStudy, Hazard, Mode, View } from "@/lib/types";
 import type { DeskState } from "@/lib/use-desk-state";
 
 const MODES: { value: Mode; label: string }[] = [
@@ -129,6 +129,20 @@ export function DeskControls({ hazards, hazard, state, inits, notable, update }:
       </div>
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        {hazard.kind === "grid" && hazard.regions && (
+          <ToggleGroup
+            aria-label="Map by"
+            variant="outline"
+            size="sm"
+            spacing={0}
+            value={[state.view]}
+            onValueChange={(v) => v[0] && update({ view: v[0] as View })}
+            className="h-8"
+          >
+            <ToggleGroupItem value="cells" className="h-8 px-3">Grid cells</ToggleGroupItem>
+            <ToggleGroupItem value="regions" className="h-8 px-3">Subdivisions</ToggleGroupItem>
+          </ToggleGroup>
+        )}
         <label htmlFor={ids.obs} className="flex cursor-pointer items-center gap-2 text-sm">
           <Switch id={ids.obs} checked={state.observed} onCheckedChange={(v) => update({ observed: v })} />
           Show what actually happened

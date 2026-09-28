@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatInit, formatValidShort, oneIn, pct } from "@/lib/format";
-import { atIntensity, inBox, pctLabel, rampColour, rgba, SHOW_FROM, splitRates, type Cell, type Scale, type Thresholds } from "@/lib/risk";
+import { atIntensity, inBox, pctLabel, rampColour, REGION_CAP, rgba, SHOW_FROM, splitRates, type Cell, type Scale, type Thresholds } from "@/lib/risk";
 import type { CaseStudy, Direction, ExplainedArea, Explanation, Hazard, LeadRow, Mode, Scores } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -78,9 +78,11 @@ function Ramp({ direction }: { direction: Direction }) {
   return <span aria-hidden className="mt-1 h-3 w-full rounded-full ring-1 ring-foreground/10" style={{ background: `linear-gradient(90deg, ${stops.join(", ")})` }} />;
 }
 
-export function MapLegend({ scales, mode, event, showObserved, showTracks }: {
+export function MapLegend({ scales, mode, event, showObserved, showTracks, byRegion }: {
   scales: Record<Direction, Scale>; mode: Mode; event: string; showObserved: boolean;
   showTracks?: boolean;
+  /** Subdivision view: colours are the chance of a bust somewhere in the subdivision. */
+  byRegion?: boolean;
 }) {
   const dirs = (mode === "both" ? ["miss", "false_alarm"] : [mode]) as Direction[];
   return (
@@ -92,16 +94,29 @@ export function MapLegend({ scales, mode, event, showObserved, showTracks }: {
             <li key={d} className="flex flex-col gap-1 py-2.5 first:pt-0">
               <span className="font-medium">{d === "miss" ? "Likely miss" : "Likely false alarm"}</span>
               <Ramp direction={d} />
+              {byRegion ? (
+                <span className="flex justify-between text-xs text-muted-foreground tabular-nums">
+                  <span>0%</span><span>35%</span><span>{pctLabel(REGION_CAP)}+</span>
+                </span>
+              ) : (
               <span className="flex justify-between text-xs text-muted-foreground tabular-nums">
                 <span>{pctLabel(atIntensity(SHOW_FROM, scales[d]))}</span>
                 <span>{pctLabel(atIntensity((1 + SHOW_FROM) / 2, scales[d]))}</span>
                 <span>{pctLabel(scales[d].cap)}+</span>
               </span>
+              )}
+              {byRegion ? (
+                <span className="text-pretty text-muted-foreground">
+                  {d === "miss" ? `Chance GEFS misses ${event} somewhere in the subdivision.` : `Chance GEFS over-calls ${event} somewhere in the subdivision.`}{" "}
+                  Shaded only where several grid cells are flagged.
+                </span>
+              ) : (
               <span className="text-pretty text-muted-foreground">
                 {d === "miss" ? `Chance that ${event} arrives with no GEFS warning. Darker = likelier.`
                   : `Chance that the ${event} GEFS forecasts won’t happen. Darker = likelier.`}{" "}
                 Uncoloured cells are below {pctLabel(atIntensity(SHOW_FROM, scales[d]))} — about {Math.round(atIntensity(SHOW_FROM, scales[d]) / scales[d].base)}× the normal {pctLabel(scales[d].base)} rate.
               </span>
+              )}
             </li>
           ))}
           {showObserved && dirs.map((d) => (

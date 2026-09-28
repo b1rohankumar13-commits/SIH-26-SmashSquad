@@ -3,7 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useTransition } from "react";
 
-import type { Mode } from "@/lib/types";
+import type { Mode, View } from "@/lib/types";
 
 export interface DeskState {
   hazard: string;
@@ -12,6 +12,7 @@ export interface DeskState {
   lead: number;
   observed: boolean;
   caseId?: string;
+  view: View;
 }
 
 const MODES: Mode[] = ["both", "miss", "false_alarm"];
@@ -32,6 +33,7 @@ export function useDeskState() {
     lead: Number.isInteger(lead) && lead >= 1 && lead <= 9 ? lead : 1,
     observed: params.get("observed") !== "0",
     caseId: params.get("case") ?? undefined,
+    view: params.get("view") === "regions" ? "regions" : "cells",
   };
 
   const update = useCallback(
@@ -43,9 +45,10 @@ export function useDeskState() {
       if ("init" in patch) set("init", patch.init);
       if ("lead" in patch) set("lead", patch.lead === 1 ? undefined : String(patch.lead));
       if ("observed" in patch) set("observed", patch.observed ? undefined : "0");
+      if ("view" in patch) set("view", patch.view === "regions" ? "regions" : undefined);
       // Hazard/date/lead/direction changes leave a case study unless the patch sets one;
       // overlay toggles keep it.
-      const display = Object.keys(patch).every((k) => k === "observed");
+      const display = Object.keys(patch).every((k) => k === "observed" || k === "view");
       if (!display || "caseId" in patch) set("case", "caseId" in patch ? patch.caseId : undefined);
       const url = `${pathname}?${next.toString()}`;
       startTransition(() => (push ? router.push(url, { scroll: false }) : router.replace(url, { scroll: false })));

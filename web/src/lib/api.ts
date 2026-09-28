@@ -2,7 +2,7 @@
 
 import useSWR from "swr";
 
-import type { CaseStudy, Explanation, GridData, Hazard, LeadRow, MonsoonData, Track } from "@/lib/types";
+import type { CaseStudy, Explanation, GridData, Hazard, LeadRow, MonsoonData, RegionData, Track } from "@/lib/types";
 
 async function fetcher<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -37,6 +37,12 @@ export const useMonsoon = (init?: string) =>
 
 export const useTracks = (hazard?: string, date?: string) =>
   useSWR<Track[]>(hazard && date ? `/api/tracks?hazard=${hazard}&date=${date}` : null, fetcher, opts);
+
+export const useSubdivisions = (enabled: boolean) =>
+  useSWR<GeoJSON.FeatureCollection>(enabled ? "/api/subdivisions" : null, fetcher, { ...opts, revalidateIfStale: false });
+
+export const useRegions = (hazard?: string, init?: string) =>
+  useSWR<RegionData>(hazard && init ? `/api/regions/${hazard}?init=${init}` : null, fetcher, opts);
 
 export const useExplain = (hazard?: string, init?: string, lead?: number) =>
   useSWR<Explanation>(hazard && init && lead ? `/api/explain/${hazard}?init=${init}&lead=${lead}` : null, fetcher, opts);
