@@ -163,3 +163,34 @@ export interface CaseStudy {
   story: string;
   valid_shift?: number;
 }
+
+export type LiveSource = "gefs" | "neps";
+
+/** One hazard in a live run (scripts/live_forecast.py). */
+export interface LiveHazardRun {
+  status: "ok" | "out_of_season" | "missing_input";
+  /** Real-time stand-ins used for observations that are not available yet. */
+  substitutions?: string[];
+  /** Truth for the valid dates was on disk, so observed busts are included. */
+  validated?: boolean;
+  valid_shift?: number;
+  validation?: Record<Direction, { busts: number; flagged: number; caught: number }>;
+  missing?: string[];
+}
+
+export interface LiveRun {
+  source: LiveSource;
+  source_label: string;
+  init: string;
+  created: string;
+  realtime: boolean;
+  hazards: Record<string, LiveHazardRun>;
+}
+
+export interface LiveJob {
+  job: string;
+  status: "running" | "done" | "failed";
+  source: LiveSource;
+  init: string | null;
+  log: string[];
+}

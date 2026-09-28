@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpenText, CloudLightning, Map, Moon, Sun } from "lucide-react";
+import { BookOpenText, CloudLightning, Map, Moon, RadioTower, Sun } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
@@ -26,6 +26,7 @@ import { Separator } from "@/components/ui/separator";
 const NAV = [
   { href: "/", label: "Forecast Desk", icon: Map },
   { href: "/cases", label: "Case Studies", icon: BookOpenText },
+  { href: "/live", label: "Live Forecast", icon: RadioTower },
 ];
 
 function ThemeToggle() {

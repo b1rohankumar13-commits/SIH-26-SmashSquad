@@ -2,7 +2,7 @@
 
 import useSWR from "swr";
 
-import type { CaseStudy, Explanation, GridData, Hazard, LeadRow, MonsoonData, RegionData, Track } from "@/lib/types";
+import type { CaseStudy, Explanation, GridData, Hazard, LeadRow, LiveJob, LiveRun, LiveSource, MonsoonData, RegionData, Track } from "@/lib/types";
 
 async function fetcher<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -46,3 +46,28 @@ export const useRegions = (hazard?: string, init?: string) =>
 
 export const useExplain = (hazard?: string, init?: string, lead?: number) =>
   useSWR<Explanation>(hazard && init && lead ? `/api/explain/${hazard}?init=${init}&lead=${lead}` : null, fetcher, opts);
+
+// ---------------------------------------------------------------- live forecast analysis
+export const useLiveRuns = () => useSWR<LiveRun[]>("/api/live/runs", fetcher, opts);
+
+const liveBase = (source?: string, init?: string) => (source && init ? `/api/live/${source}/${init}` : null);
+
+export const useLiveGrid = (source?: string, init?: string, hazard?: string, lead?: number) =>
+  useSWR<GridData>(liveBase(source, init) && hazard && lead ? `${liveBase(source, init)}/grid/${hazard}?lead=${lead}` : null, fetcher, opts);
+
+export const useLiveRegions = (source?: string, init?: string, hazard?: string) =>
+  useSWR<RegionData>(liveBase(source, init) && hazard ? `${liveBase(source, init)}/regions/${hazard}` : null, fetcher, opts);
+
+export const useLiveExplain = (source?: string, init?: string, hazard?: string, lead?: number) =>
+  useSWR<Explanation>(liveBase(source, init) && hazard && lead ? `${liveBase(source, init)}/explain/${hazard}?lead=${lead}` : null, fetcher, opts);
+
+/** Polls every 2 s while the job runs. */
+export const useLiveJob = (job?: string) =>
+  useSWR<LiveJob>(job ? `/api/live/jobs/${job}` : null, fetcher,
+    { refreshInterval: (d) => (d && d.status !== "running" ? 0 : 2000) });
+
+export async function startLiveRun(body: { source: LiveSource; init?: string; fetch: boolean; realtime: boolean }) {
+  const res = await fetch("/api/live/run", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? `${res.status} ${res.statusText}`);
+  return (await res.json()) as { job: string };
+}

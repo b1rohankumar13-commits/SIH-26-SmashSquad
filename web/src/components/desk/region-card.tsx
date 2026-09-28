@@ -20,8 +20,10 @@ function chance(d: RegionData, L: number, r: number, mode: Mode) {
  * Subdivisions ranked by bust chance on the selected day, with Days 1-9 alongside:
  * the region-wise confidence view (low chance = GEFS can be trusted there).
  */
-export function RegionCard({ hazard, data, mode, lead, showObserved, onLead }: {
+export function RegionCard({ hazard, data, mode, lead, showObserved, onLead, showSkill = true }: {
   hazard: Hazard; data?: RegionData; mode: Mode; lead: number; showObserved: boolean; onLead: (lead: number) => void;
+  /** Validation skill line (off in the live section, which shows forecasts only). */
+  showSkill?: boolean;
 }) {
   if (!data) return <Skeleton className="h-72 w-full" />;
   const L = lead - 1;
@@ -29,7 +31,7 @@ export function RegionCard({ hazard, data, mode, lead, showObserved, onLead }: {
     .map((r) => ({ r, p: chance(data, L, r, mode) }))
     .sort((a, b) => b.p - a.p)
     .slice(0, TOP);
-  const skill = hazard.regions?.skill;
+  const skill = showSkill ? hazard.regions?.skill : undefined;
   const dirs = (mode === "both" ? ["miss", "false_alarm"] : [mode]) as Direction[];
   return (
     <Card className="gap-3">

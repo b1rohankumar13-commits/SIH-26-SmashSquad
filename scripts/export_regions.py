@@ -150,6 +150,15 @@ def noisy_or(p: np.ndarray, valid: np.ndarray, reg: np.ndarray, R: int) -> tuple
     return score, count
 
 
+def region_flags(shown: np.ndarray, reg: np.ndarray, R: int) -> np.ndarray:
+    """shown [n, H, W] (cells the grid map colours) -> [n, R] subdivision shaded."""
+    out = np.zeros((shown.shape[0], R), np.int8)
+    for r in range(R):
+        m = reg == r
+        out[:, r] = shown[:, m].sum(1) >= min(MIN_FLAGGED, max(1, round(0.1 * m.sum())))
+    return out
+
+
 def region_any(obs: np.ndarray, valid: np.ndarray, reg: np.ndarray, R: int) -> np.ndarray:
     out = np.full((obs.shape[0], R), -1, np.int8)
     for r in range(R):
@@ -163,7 +172,7 @@ def hazard_regions(name: str, entry: dict, reg: np.ndarray, R: int) -> dict:
     a = {k: np.load(OUT / name / f"{k}.npy") for k in ("p_miss", "p_fa", "obs_miss", "obs_fa", "b_miss", "b_fa", "ens_prob")}
     n = a["p_miss"].shape[0]
     valid = a["obs_miss"] >= 0
-    out, meta = {}, {"skill": {}}
+    out, meta = {}, {"skill": {}, "calibration": {}}
     for d, pk, bk, ok, possible in (("miss", "p_miss", "b_miss", "obs_miss", lambda e: e < 0.2),
                                     ("false_alarm", "p_fa", "b_fa", "obs_fa", lambda e: e >= 0.5)):
         cal = entry["tiers"][d]["calibration"]
@@ -171,12 +180,11 @@ def hazard_regions(name: str, entry: dict, reg: np.ndarray, R: int) -> dict:
         F = np.zeros((n, LEADS, R), np.int8)  # subdivision has a cell the grid map colours
         cut = display_cut(entry["tiers"][d])
         ys, ms, bs = [], [], []
+        meta["calibration"][d] = []
         for L in range(LEADS):
             pc = calibrated(a[pk][:, L].astype(np.float32), cal, L + 1)
             shown = (pc >= cut) & valid[:, L]
-            for r in range(R):
-                m = reg == r
-                F[:, L, r] = shown[:, m].sum(1) >= min(MIN_FLAGGED, max(1, round(0.1 * m.sum())))
+            F[:, L] = region_flags(shown, reg, R)
             # GEFS-only goes through its own isotonic so the two scores are on the same footing
             bl = a[bk][:, L].astype(np.float32)
             y = region_any(a[ok][:, L], valid[:, L], reg, R)
@@ -186,6 +194,9 @@ def hazard_regions(name: str, entry: dict, reg: np.ndarray, R: int) -> dict:
             elig = region_any(possible(a["ens_prob"][:, L].astype(np.float32)).astype(np.int8), valid[:, L], reg, R) == 1
             iso = IsotonicRegression(y_min=0, y_max=1, out_of_bounds="clip").fit(s[fin], y[fin])
             P[:, L] = iso.predict(s.ravel()).reshape(s.shape); O[:, L] = y
+            # knots so live runs (scripts/live_forecast.py) apply the same region calibration
+            meta["calibration"][d].append({"x": np.round(iso.X_thresholds_, 5).tolist(),
+                                           "y": np.round(iso.y_thresholds_, 5).tolist()})
             cell = IsotonicRegression(y_min=0, y_max=1, out_of_bounds="clip").fit(
                 bl[valid[:, L]], (a[ok][:, L][valid[:, L]] == 1))
             sb, _ = noisy_or(cell.predict(bl.ravel()).reshape(bl.shape), valid[:, L], reg, R)
@@ -199,6 +210,7 @@ def hazard_regions(name: str, entry: dict, reg: np.ndarray, R: int) -> dict:
     np.save(OUT / name / "region_p_fa.npy", out["false_alarm"][0]); np.save(OUT / name / "region_obs_fa.npy", out["false_alarm"][1])
     np.save(OUT / name / "region_flag_miss.npy", out["miss"][2]); np.save(OUT / name / "region_flag_fa.npy", out["false_alarm"][2])
     meta["covered"] = sorted({int(r) for r in np.unique(reg[valid.any((0, 1))]) if r >= 0})
+    np.save(OUT / name / "domain.npy", valid.any((0, 1)))  # cells this hazard is verified on
     return meta
 
 
