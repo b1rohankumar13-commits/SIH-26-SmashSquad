@@ -33,7 +33,7 @@ export function useDeskState() {
     lead: Number.isInteger(lead) && lead >= 1 && lead <= 9 ? lead : 1,
     observed: params.get("observed") !== "0",
     caseId: params.get("case") ?? undefined,
-    view: params.get("view") === "regions" ? "regions" : "cells",
+    view: (["regions", "confidence"] as const).find((v) => v === params.get("view")) ?? "cells",
   };
 
   const update = useCallback(
@@ -45,7 +45,7 @@ export function useDeskState() {
       if ("init" in patch) set("init", patch.init);
       if ("lead" in patch) set("lead", patch.lead === 1 ? undefined : String(patch.lead));
       if ("observed" in patch) set("observed", patch.observed ? undefined : "0");
-      if ("view" in patch) set("view", patch.view === "regions" ? "regions" : undefined);
+      if ("view" in patch) set("view", patch.view === "cells" ? undefined : patch.view);
       // Hazard/date/lead/direction changes leave a case study unless the patch sets one;
       // overlay toggles keep it.
       const display = Object.keys(patch).every((k) => k === "observed" || k === "view");

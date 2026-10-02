@@ -10,6 +10,7 @@ import { formatInit, formatValidShort, oneIn, pct } from "@/lib/format";
 import { atIntensity, inBox, pctLabel, rampColour, REGION_CAP, rgba, SHOW_FROM, splitRates, type Cell, type Scale, type Thresholds } from "@/lib/risk";
 import type { CaseStudy, Direction, ExplainedArea, Explanation, Hazard, LeadRow, Mode, Scores } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { driverHint } from "@/lib/glossary";
 
 export function DirectionBadge({ direction }: { direction: Direction }) {
   return direction === "miss"
@@ -275,7 +276,7 @@ function AreaDrivers({ d, k, a }: { d: Direction; k: number; a: ExplainedArea })
       <ul className="flex flex-col gap-1">
         {a.drivers.map((r) => (
           <li key={r.name} className="grid grid-cols-[minmax(0,1fr)_auto_3.5rem] items-center gap-x-2 text-xs">
-            <span className="truncate" title={r.name}>{r.name}</span>
+            <span className="truncate cursor-help underline decoration-dotted decoration-foreground/30 underline-offset-2" title={driverHint(r.name)}>{r.name}</span>
             <span className="tabular-nums text-muted-foreground">{r.value}</span>
             <span className="flex items-center gap-1.5 tabular-nums" aria-label={`${Math.round(r.share * 100)}% of the signal`}>
               <span aria-hidden className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">

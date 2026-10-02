@@ -7,16 +7,19 @@ that hold several subdivisions. Written (lightly simplified) to outputs/dashboar
 
 Each 0.5 deg cell belongs to the subdivision containing its centre (island subdivisions with no
 centre inside take the cells their polygons touch). For every grid hazard, forecast and lead:
-  score  = 1 - prod(1 - p_i) over the subdivision's observed cells (p_i = calibrated cell risk)
+  score  = sum of p_i over the subdivision's observed cells (p_i = calibrated cell risk), i.e. the
+           expected number of busting cells (a "1 - prod(1 - p_i)" score saturates at 1 once a few
+           cells are flagged, and then every busy subdivision got the same calibrated chance)
   target = at least one of those cells busted
 and an isotonic fit per lead day on the validation forecasts turns the score into "chance GEFS
 busts somewhere in this subdivision" (the same in-sample calibration the cell map uses). The
 GEFS-only baseline goes through the same steps, so region skill is model vs GEFS alone; it is
 scored only on subdivisions where the bust is possible (a cell with GEFS < 20% / >= 50%).
 
-Writes outputs/dashboard/<hazard>/region_{p_miss,p_fa,obs_miss,obs_fa}.npy [n_init, lead, R]
+Writes outputs/dashboard/<hazard>/region_{p_miss,p_fa,obs_miss,obs_fa,exp_miss,exp_fa}.npy [n_init, lead, R]
+(exp = expected busting cells)
 (obs -1 = no observed cell), region_flag_{miss,fa}.npy (1 = the grid map colours MIN_FLAGGED+ cells
-there; the region map only shades those) and index.json[hazard]["regions"] (skill).
+there; the region map only shades those) and index.json[hazard]["regions"] (skill, calibration knots, confidence grade cut-offs).
 """
 
 from __future__ import annotations
@@ -139,15 +142,10 @@ def write_geojson(subs: list[dict]) -> None:
     (OUT / "subdivisions.geojson").write_text(geo)
 
 
-def noisy_or(p: np.ndarray, valid: np.ndarray, reg: np.ndarray, R: int) -> tuple[np.ndarray, np.ndarray]:
-    """p, valid: [n, H, W] -> score [n, R] and count of valid cells [n, R]."""
-    lg = np.log1p(-np.clip(p, 0, 0.999999)) * valid
-    score = np.zeros((p.shape[0], R)); count = np.zeros((p.shape[0], R), int)
-    for r in range(R):
-        m = reg == r
-        score[:, r] = 1 - np.exp(lg[:, m].sum(1))
-        count[:, r] = valid[:, m].sum(1)
-    return score, count
+def expected_cells(p: np.ndarray, valid: np.ndarray, reg: np.ndarray, R: int) -> np.ndarray:
+    """p, valid: [n, H, W] -> expected busting cells per subdivision [n, R] (sum of cell risks)."""
+    pv = np.where(valid, p, 0.0)
+    return np.stack([pv[:, reg == r].sum(1) for r in range(R)], 1)
 
 
 def region_flags(shown: np.ndarray, reg: np.ndarray, R: int) -> np.ndarray:
@@ -178,6 +176,7 @@ def hazard_regions(name: str, entry: dict, reg: np.ndarray, R: int) -> dict:
         cal = entry["tiers"][d]["calibration"]
         P = np.zeros((n, LEADS, R), np.float16); O = np.full((n, LEADS, R), -1, np.int8)
         F = np.zeros((n, LEADS, R), np.int8)  # subdivision has a cell the grid map colours
+        E = np.zeros((n, LEADS, R), np.float16)  # expected busting cells
         cut = display_cut(entry["tiers"][d])
         ys, ms, bs = [], [], []
         meta["calibration"][d] = []
@@ -188,7 +187,7 @@ def hazard_regions(name: str, entry: dict, reg: np.ndarray, R: int) -> dict:
             # GEFS-only goes through its own isotonic so the two scores are on the same footing
             bl = a[bk][:, L].astype(np.float32)
             y = region_any(a[ok][:, L], valid[:, L], reg, R)
-            s, _ = noisy_or(pc, valid[:, L], reg, R)
+            s = expected_cells(pc, valid[:, L], reg, R); E[:, L] = s
             fin = y >= 0
             # skill only where this bust can happen: some observed cell with GEFS < 20% (miss) / >= 50% (FA)
             elig = region_any(possible(a["ens_prob"][:, L].astype(np.float32)).astype(np.int8), valid[:, L], reg, R) == 1
@@ -199,17 +198,25 @@ def hazard_regions(name: str, entry: dict, reg: np.ndarray, R: int) -> dict:
                                            "y": np.round(iso.y_thresholds_, 5).tolist()})
             cell = IsotonicRegression(y_min=0, y_max=1, out_of_bounds="clip").fit(
                 bl[valid[:, L]], (a[ok][:, L][valid[:, L]] == 1))
-            sb, _ = noisy_or(cell.predict(bl.ravel()).reshape(bl.shape), valid[:, L], reg, R)
+            sb = expected_cells(cell.predict(bl.ravel()).reshape(bl.shape), valid[:, L], reg, R)
             ys.append(y[fin & elig]); ms.append(P[:, L][fin & elig].astype(np.float64)); bs.append(sb[fin & elig])
         y, m, b = np.concatenate(ys), np.concatenate(ms), np.concatenate(bs)
         meta["skill"][d] = {"model": {"auroc": float(roc_auc_score(y, m)), "pr_auc": float(average_precision_score(y, m))},
                             "baseline": {"auroc": float(roc_auc_score(y, b)), "pr_auc": float(average_precision_score(y, b))},
                             "base_rate": float(y.mean()), "n": int(len(y))}
-        out[d] = (P, O, F)
+        out[d] = (P, O, F, E)
     np.save(OUT / name / "region_p_miss.npy", out["miss"][0]); np.save(OUT / name / "region_obs_miss.npy", out["miss"][1])
     np.save(OUT / name / "region_p_fa.npy", out["false_alarm"][0]); np.save(OUT / name / "region_obs_fa.npy", out["false_alarm"][1])
     np.save(OUT / name / "region_flag_miss.npy", out["miss"][2]); np.save(OUT / name / "region_flag_fa.npy", out["false_alarm"][2])
+    np.save(OUT / name / "region_exp_miss.npy", out["miss"][3]); np.save(OUT / name / "region_exp_fa.npy", out["false_alarm"][3])
     meta["covered"] = sorted({int(r) for r in np.unique(reg[valid.any((0, 1))]) if r >= 0})
+    # Forecast confidence = chance the forecast holds (no miss and no false alarm anywhere in the
+    # subdivision) = (1 - p_miss)(1 - p_fa). Grades: Low = the riskiest 10% of validation
+    # subdivision-days, Medium = the next 20%, High = the rest; pooled over leads so later days
+    # show more Low.
+    p_any = 1 - (1 - out["miss"][0].astype(np.float64)) * (1 - out["false_alarm"][0].astype(np.float64))
+    cov = p_any[..., meta["covered"]]
+    meta["confidence_cuts"] = [round(float(np.quantile(cov, 0.70)), 4), round(float(np.quantile(cov, 0.90)), 4)]
     np.save(OUT / name / "domain.npy", valid.any((0, 1)))  # cells this hazard is verified on
     return meta
 

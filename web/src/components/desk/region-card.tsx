@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { pctLabel, rampColour, regionTone, rgba } from "@/lib/risk";
+import { cellsLabel, expectedCells, pctLabel, rampColour, regionTone, rgba } from "@/lib/risk";
 import type { Direction, Hazard, Mode, RegionData } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -28,8 +28,8 @@ export function RegionCard({ hazard, data, mode, lead, showObserved, onLead, sho
   if (!data) return <Skeleton className="h-72 w-full" />;
   const L = lead - 1;
   const rows = data.covered
-    .map((r) => ({ r, p: chance(data, L, r, mode) }))
-    .sort((a, b) => b.p - a.p)
+    .map((r) => ({ r, p: chance(data, L, r, mode), n: expectedCells(data, L, r, mode) }))
+    .sort((a, b) => b.p - a.p || b.n - a.n)
     .slice(0, TOP);
   const skill = showSkill ? hazard.regions?.skill : undefined;
   const dirs = (mode === "both" ? ["miss", "false_alarm"] : [mode]) as Direction[];
@@ -64,7 +64,7 @@ export function RegionCard({ hazard, data, mode, lead, showObserved, onLead, sho
                     const tone = regionTone(m, f, data.flag_miss[d - 1][r] === 1, data.flag_fa[d - 1][r] === 1, mode);
                     const busted = showObserved && dirs.some((k) => (k === "miss" ? data.obs_miss : data.obs_fa)[d - 1][r] === 1);
                     return (
-                      <td key={d} title={`Day ${d}: miss ${pctLabel(m)} · false alarm ${pctLabel(f)}${busted ? " · busted" : ""}`}
+                      <td key={d} title={`Day ${d}: miss ${pctLabel(m)} · false alarm ${pctLabel(f)} · ${cellsLabel(expectedCells(data, d - 1, r, mode))} expected to bust${busted ? " · busted" : ""}`}
                         className={cn("relative h-7 rounded text-center", d === lead && "ring-1 ring-foreground/40",
                           tone && tone.strength > 0.55 && "text-white")}
                         style={{ background: tone ? rgba(rampColour(tone.direction, tone.strength)) : undefined }}>

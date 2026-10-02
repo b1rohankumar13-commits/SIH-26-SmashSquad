@@ -89,7 +89,7 @@ export function AppShell({ title, actions, children }: { title: string; actions?
         </SidebarContent>
         <SidebarFooter>
           <p className="px-2 text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
-            GEFS reforecast · validation years only
+            {pathname === "/live" ? "Live GEFS / NEPS · frozen models" : "GEFS reforecast · held-out years"}
           </p>
         </SidebarFooter>
       </Sidebar>

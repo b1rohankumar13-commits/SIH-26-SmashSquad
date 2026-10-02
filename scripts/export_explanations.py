@@ -134,6 +134,7 @@ def areas(hazard: str, index: dict) -> tuple[dict, list[str]]:
 def attribute(forward_models, features, rows, names, groups, raw_of, found, n_rows, label: str) -> dict:
     """forward_models: list of (model, needs) where features(row, needs) -> [L,H,W,C] tensor input."""
     lats, lons = canonical_centres(0.5)
+    reg = np.load(OUT / "regions.npy")  # cell -> IMD subdivision (scripts/export_regions.py)
     ch = {c: i for i, c in enumerate(names)}
     gidx = {g: [ch[c] for c in cs if c in ch] for g, (cs, _, _) in groups.items()}
     gidx = {g: v for g, v in gidx.items() if v}
@@ -178,6 +179,8 @@ def attribute(forward_models, features, rows, names, groups, raw_of, found, n_ro
             res.setdefault(label_of(i, label), {}).setdefault(str(L + 1), {}).setdefault(d, []).append({
                 "lat": round(float(lats[yy].mean()), 2), "lon": round(float(lons[xx].mean()), 2),
                 "cells": int(cells.sum()), "expected": round(expected, 2),
+                # subdivision id -> cells of this area inside it (for reasons in the subdivision view)
+                "regions": {str(r): int(c) for r, c in zip(*np.unique(reg[cells], return_counts=True)) if r >= 0},
                 "box": [float(lats[yy].min()), float(lats[yy].max()), float(lons[xx].min()), float(lons[xx].max())],
                 "drivers": drivers})
         if s % 200 == 0:

@@ -1,8 +1,10 @@
 "use client";
 
+import { FileDown } from "lucide-react";
 import { useId } from "react";
 
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { buttonVariants } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { formatInit } from "@/lib/format";
@@ -141,7 +143,14 @@ export function DeskControls({ hazards, hazard, state, inits, notable, update }:
           >
             <ToggleGroupItem value="cells" className="h-8 px-3">Grid cells</ToggleGroupItem>
             <ToggleGroupItem value="regions" className="h-8 px-3">Subdivisions</ToggleGroupItem>
+            <ToggleGroupItem value="confidence" className="h-8 px-3">Confidence</ToggleGroupItem>
           </ToggleGroup>
+        )}
+        {hazard.kind === "grid" && hazard.regions && state.init && (
+          <a href={`/api/bulletin/${hazard.id}.csv?init=${state.init}`} download
+            className={buttonVariants({ variant: "outline", size: "sm" })}>
+            <FileDown aria-hidden />Download bulletin (CSV)
+          </a>
         )}
         <label htmlFor={ids.obs} className="flex cursor-pointer items-center gap-2 text-sm">
           <Switch id={ids.obs} checked={state.observed} onCheckedChange={(v) => update({ observed: v })} />

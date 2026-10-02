@@ -141,3 +141,35 @@ export function regionTone(pMiss: number, pFa: number, flagMiss: boolean, flagFa
   const [direction, p] = m >= f ? ["miss", m] as const : ["false_alarm", f] as const;
   return { direction, strength: Math.min(1, p / REGION_CAP) };
 }
+
+/**
+ * Forecast confidence per subdivision = chance the forecast holds there (no miss and no false
+ * alarm anywhere in it) = (1 - p_miss)(1 - p_fa). Grades use the validation distribution
+ * (Low = riskiest 10% of subdivision-days, Medium = next 20%; cut-offs from export_regions.py)
+ * with absolute floors so a rare hazard's 1% bust chance is never called "low confidence".
+ */
+export type Grade = "high" | "medium" | "low";
+const LOW_FLOOR = 0.25;
+const MEDIUM_FLOOR = 0.1;
+
+export function confidence(pMiss: number, pFa: number, cuts: [number, number]): { conf: number; grade: Grade } {
+  const pAny = 1 - (1 - pMiss) * (1 - pFa);
+  const grade: Grade = pAny >= Math.max(cuts[1], LOW_FLOOR) ? "low" : pAny >= Math.max(cuts[0], MEDIUM_FLOOR) ? "medium" : "high";
+  return { conf: 1 - pAny, grade };
+}
+
+/** Confidence has its own hue (violet) so it never reads as a miss (orange) or false alarm (blue). */
+export const GRADE_COLOUR: Record<Grade, [number, number, number, number]> = {
+  high: [0, 0, 0, 0],
+  medium: [196, 181, 253, 130],
+  low: [109, 40, 217, 215],
+};
+/** Expected busting cells in a subdivision on one day, for the bust directions shown. */
+export function expectedCells(d: { exp_miss?: number[][]; exp_fa?: number[][] }, L: number, r: number, mode: Mode = "both") {
+  return (mode !== "false_alarm" ? d.exp_miss?.[L][r] ?? 0 : 0) + (mode !== "miss" ? d.exp_fa?.[L][r] ?? 0 : 0);
+}
+
+/** "~12 cells" / "<1 cell" */
+export const cellsLabel = (n: number) => (n < 1 ? "<1 cell" : `~${Math.round(n)} cells`);
+
+export const GRADE_LABEL: Record<Grade, string> = { high: "High", medium: "Medium", low: "Low" };

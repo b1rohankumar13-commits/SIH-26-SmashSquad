@@ -44,7 +44,7 @@ import xarray as xr
 from scripts import export_explanations as ex
 from scripts.export_dashboard_predictions import (DEV, LEAD01, LEADS, LAT, LON, LPS_CACHE, LPS_CKPTS, OUT as DASH,
                                                    WD_CACHE, WD_CKPTS, heatwave_checkpoints)
-from scripts.export_regions import noisy_or, region_any, region_flags
+from scripts.export_regions import expected_cells, region_any, region_flags
 from src.detection.heavy_rainfall import ensemble_exceedance_probability
 from src.features.rainfall_labels import regrid_obs_to_grid
 from src.models.graphnet.grid_graph import canonical_centres
@@ -140,6 +140,7 @@ def rain_model():
     return m
 
 
+@lru_cache(maxsize=None)
 def heat_models(C: int) -> list:
     from scripts.train_heatwave import HeatwaveBustNet
     out = []
@@ -149,7 +150,8 @@ def heat_models(C: int) -> list:
     return out
 
 
-def ckpt_models(paths: list[Path], in_ch: int | None = None) -> list[tuple]:
+@lru_cache(maxsize=None)
+def ckpt_models(paths: tuple[Path, ...], in_ch: int | None = None) -> list[tuple]:
     from scripts.train_heatwave import HeatwaveBustNet
     out = []
     for p in paths:
@@ -163,6 +165,16 @@ def ckpt_models(paths: list[Path], in_ch: int | None = None) -> list[tuple]:
 # ----------------------------------------------------------------------------- hazards
 # Each returns: x (model input), models [(module, input_fn)], ens_prob [L,H,W], obs [L,H,W,2] | None,
 # substitutions [str], names (x channel names), mean/std (to report physical values), groups.
+
+def day1_departure(path: Path, t: pd.Timestamp, bias: np.ndarray, normal: np.ndarray) -> np.ndarray:
+    """Forecast day-1 Tmax departure from the run issued on t: the real-time stand-in for the
+    observed Tmax departure on t."""
+    if not path.exists():
+        return np.full((LAT, LON), np.nan, np.float32)
+    with xr.open_dataset(path) as d:
+        T = d["tmax_2m"].isel(run=0, lead=0).transpose("member", "latitude", "longitude").values - 273.15
+    return (T.mean(0) - bias[0, t.month] - normal[t.dayofyear - 1]).astype(np.float32)
+
 
 def rain_inputs(source: str, init: str) -> dict:
     from src.features.build_gridded_sequences_nbhd import NBHD_CHANNEL_NAMES, build_nbhd_sequences, standardize_nbhd
@@ -189,6 +201,10 @@ def heatwave_inputs(source: str, init: str, realtime: bool) -> dict:
     train = CACHES / "heatwave_10yr"
     normal = np.load(train / "normal.npy"); bias = np.load(train / "bias.npz")["bias"]
     std = np.load(train / "standardizer.npz")
+    # Observed persistence (ERA5) when it covers both days; otherwise both days fall back to the
+    # forecast's own day-1 Tmax from the runs issued on those days.
+    prev = [day(init, -k) for k in (1, 2)]
+    observed = not realtime and all(era5_tmax(t) is not None for t in prev)
     valid = [day(init, L) for L in range(LEADS)]
     vdoy = np.array([v.dayofyear for v in valid]); vmonth = np.array([v.month for v in valid])
     norm_v = normal[vdoy - 1]
@@ -207,15 +223,12 @@ def heatwave_inputs(source: str, init: str, realtime: bool) -> dict:
 
     def dep(back: int) -> np.ndarray:
         t = day(init, -back)
-        obs = None if realtime else era5_tmax(t)
-        if obs is not None:
-            return obs - normal[t.dayofyear - 1]
-        prev = tmax_c(ymd(t))  # the forecast's own day-1 Tmax from the run issued that day
-        if prev is None:
-            subs.append(f"no Tmax for {ymd(t)}: observed-heat input left at its training mean")
-            return np.full((LAT, LON), np.nan, np.float32)
-        subs.append(f"observed Tmax {ymd(t)} -> {source.upper()} day-1 forecast from that day")
-        return prev.mean(0)[0] - normal[t.dayofyear - 1]
+        if observed:
+            return era5_tmax(t) - normal[t.dayofyear - 1]
+        f = store_file(source, "tmax", ymd(t))
+        subs.append(f"observed Tmax {ymd(t)} -> {source.upper()} day-1 forecast from that day" if f.exists()
+                    else f"no Tmax for {ymd(t)}: observed-heat input left at its training mean")
+        return day1_departure(f, t, bias, normal)
 
     dep1, dep2 = dep(1), dep(2)
     with xr.open_dataset(store_file(source, "mv", init)) as d:
@@ -273,7 +286,7 @@ def lps_inputs(source: str, init: str, realtime: bool) -> dict:
     x = np.concatenate([x24, xl.astype(np.float32), xe, LEAD01.astype(np.float32)], -1)
     n24, nl, ne = x24.shape[-1], xl.shape[-1], len(ENV)
     plain = list(range(n24 + nl)) + [n24 + nl + ne]
-    models = [(m, (lambda v: v) if st.get("env") else (lambda v, c=plain: v[..., c])) for m, st in ckpt_models(LPS_CKPTS)]
+    models = [(m, (lambda v: v) if st.get("env") else (lambda v, c=plain: v[..., c])) for m, st in ckpt_models(tuple(LPS_CKPTS))]
     obs = None
     z = np.load(LPS_TRUTH_ALL)
     tdates = set(z["dates"].tolist())
@@ -333,7 +346,7 @@ def wd_inputs(source: str, init: str, realtime: bool) -> dict:
             o = truth[L]; ok = region & np.isfinite(o); heavy = o >= EVENT_MM; ev = heavy & gate
             obs[L, ..., 0] = np.where(ok, np.where(heavy & ~ev, np.nan, (P[L] < MISS_BELOW) & ev), np.nan)
             obs[L, ..., 1] = np.where(ok, (P[L] >= FA_AT) & ~heavy, np.nan)
-    return {"x": x, "models": [(m, lambda v: v) for m, _ in ckpt_models(WD_CKPTS, len(CHANNELS))], "ens": P, "obs": obs,
+    return {"x": x, "models": [(m, lambda v: v) for m, _ in ckpt_models(tuple(WD_CKPTS), len(CHANNELS))], "ens": P, "obs": obs,
             "subs": subs, "names": list(CHANNELS), "mean": std["mean"], "std": std["std"], "groups": ex.WD_GROUPS}
 
 
@@ -363,20 +376,22 @@ def region_outputs(h: str, entry: dict, p: np.ndarray, domain: np.ndarray, obs: 
     for j, d in enumerate(("miss", "false_alarm")):
         t = entry["tiers"][d]; knots = entry["regions"]["calibration"][d]; cut = ex.display_cut(t)
         P = np.zeros((LEADS, R), np.float16); F = np.zeros((LEADS, R), np.int8); O = np.full((LEADS, R), -1, np.int8)
+        E = np.zeros((LEADS, R), np.float16)
         for L in range(LEADS):
             pc = ex.calibrated(p[L, ..., j], t["calibration"], L + 1)
-            s, _ = noisy_or(pc[None], domain[None], reg, R)
+            s = expected_cells(pc[None], domain[None], reg, R); E[L] = s[0]
             P[L] = np.interp(s[0], knots[L]["x"], knots[L]["y"]) if len(knots[L]["x"]) > 1 else knots[L]["y"][0]
             F[L] = region_flags(((pc >= cut) & domain)[None], reg, R)[0]
             if obs is not None:
                 o = np.where(np.isfinite(obs[L, ..., j]), obs[L, ..., j], -1).astype(np.int8)
                 O[L] = region_any(o[None], (domain & (o >= 0))[None], reg, R)[0]
         key = "miss" if d == "miss" else "fa"
-        out[f"region_p_{key}"], out[f"region_flag_{key}"], out[f"region_obs_{key}"] = P, F, O
+        out[f"region_p_{key}"], out[f"region_flag_{key}"], out[f"region_obs_{key}"], out[f"region_exp_{key}"] = P, F, O, E
     return out
 
 
-def explain(h: str, entry: dict, inp: dict, p: np.ndarray, domain: np.ndarray, init: str) -> dict:
+def explain(h: str, entry: dict, inp: dict, p: np.ndarray, domain: np.ndarray, init: str,
+            source: str = "gefs") -> dict:
     found = {}
     for j, d in enumerate(("miss", "false_alarm")):
         t = entry["tiers"][d]; cut = ex.display_cut(t)
@@ -407,7 +422,14 @@ def explain(h: str, entry: dict, inp: dict, p: np.ndarray, domain: np.ndarray, i
     ex._INITS[f"live-{h}"] = [init]
     raw = ex.raw_reader(inp["names"], inp["mean"], inp["std"], lambda r: x)
     res = ex.attribute(fwd, lambda r, needs: x, [0], inp["names"], inp["groups"], raw, found, 1, f"live-{h}")
-    return res.get(init, {})
+    out = res.get(init, {})
+    if source != "gefs":  # driver names say GEFS; name the system actually analysed
+        for per in out.values():
+            for areas in per.values():
+                for area in areas:
+                    for d in area["drivers"]:
+                        d["name"] = d["name"].replace("GEFS", source.upper())
+    return out
 
 
 def validation(entry: dict, p: np.ndarray, obs: np.ndarray, domain: np.ndarray) -> dict:
@@ -458,7 +480,7 @@ def run(source: str, init: str, hazards: list[str], realtime: bool = False) -> d
         arrays.update(region_outputs(h, entry, p, domain, obs))
         for k, v in arrays.items():
             np.save(d / f"{k}.npy", v)
-        (d / "explain.json").write_text(json.dumps(explain(h, entry, inp, p, domain, init), separators=(",", ":"),
+        (d / "explain.json").write_text(json.dumps(explain(h, entry, inp, p, domain, init, source), separators=(",", ":"),
                                                    ensure_ascii=False), encoding="utf-8")
         info = {"status": "ok", "substitutions": inp["subs"], "validated": obs is not None,
                 "valid_shift": inp.get("valid_shift", -1), "seconds": round(time.time() - t0, 1)}
@@ -471,10 +493,15 @@ def run(source: str, init: str, hazards: list[str], realtime: bool = False) -> d
     return meta
 
 
-def fetch(source: str, init: str) -> None:
-    """Download one init (plus the day before, for the real-time stand-ins) into the source's store."""
+def fetch(source: str, init: str, realtime: bool) -> None:
+    """Download one init into the source's store (plus the two days before when the real-time
+    stand-ins need that system's own previous runs)."""
     py = sys.executable
-    for i in (ymd(day(init, -1)), init):
+    days = [ymd(day(init, -2)), ymd(day(init, -1)), init] if realtime else [init]
+    for i in days:
+        if store_file(source, "rain", i).exists():  # already downloaded: never fetch twice
+            print(f"fetch: {source} {i} already on disk, skipped", flush=True)
+            continue
         if source == "gefs":
             cmd = [py, "-m", "src.acquisition.download_gefs_operational", "--date", i]
         else:
@@ -508,7 +535,7 @@ def main() -> None:
     args = ap.parse_args()
     init = args.init or (newest_available(args.source) if args.fetch else latest(args.source))
     if args.fetch:
-        fetch(args.source, init)
+        fetch(args.source, init, args.realtime)
     t0 = time.time()
     run(args.source, init, args.hazards.split(","), args.realtime)
     print(f"done in {time.time() - t0:.0f}s -> {LIVE / args.source / init}", flush=True)

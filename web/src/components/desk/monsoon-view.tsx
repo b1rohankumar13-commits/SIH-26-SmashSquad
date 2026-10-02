@@ -8,6 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DirectionBadge, SkillCard } from "@/components/desk/panels";
+import { useMonsoonExplain } from "@/lib/api";
+import { driverHint } from "@/lib/glossary";
 import { formatInit, formatValid, pct, TARGET_LABELS, tierSentence } from "@/lib/format";
 import { calibrate, level } from "@/lib/risk";
 import type { Direction, Hazard, MonsoonData } from "@/lib/types";
@@ -26,6 +28,40 @@ const config = {
   miss_active: { label: TARGET_LABELS.miss_active, color: "var(--miss)" },
   fa_active: { label: TARGET_LABELS.fa_active, color: "var(--fa)" },
 } satisfies ChartConfig;
+
+/** Drivers of the flagged regime busts on this day (gradient x input, pooled over the core zone). */
+function MonsoonWhy({ init, lead }: { init: string; lead: number }) {
+  const why = useMonsoonExplain(init, lead);
+  const entries = Object.entries(why.data ?? {});
+  return (
+    <Card size="sm">
+      <CardHeader><CardTitle>Why?</CardTitle></CardHeader>
+      <CardContent>
+        {entries.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No regime bust is at high alert on this day.</p>
+        ) : (
+          <ul className="flex flex-col divide-y">
+            {entries.map(([t, drivers]) => (
+              <li key={t} className="flex flex-col gap-1.5 py-2.5 first:pt-0 last:pb-0">
+                <span className="font-medium">{TARGET_LABELS[t] ?? t}</span>
+                {drivers.map((d) => (
+                  <div key={d.name} className="grid grid-cols-[minmax(0,1fr)_auto_3rem] items-center gap-2 text-xs">
+                    <span className="truncate cursor-help underline decoration-dotted decoration-foreground/30 underline-offset-2" title={driverHint(d.name)}>{d.name}</span>
+                    <span className="text-muted-foreground tabular-nums">{d.value}</span>
+                    <span className="flex items-center gap-1.5 tabular-nums">
+                      <span aria-hidden className="h-1.5 rounded-full bg-foreground/70" style={{ width: `${Math.max(4, d.share * 24)}px` }} />
+                      {Math.round(d.share * 100)}%
+                    </span>
+                  </div>
+                ))}
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 export function MonsoonView({ hazard, data, lead, showObserved }: { hazard: Hazard; data?: MonsoonData; lead: number; showObserved: boolean }) {
   if (!data) return <Skeleton className="h-96 w-full" />;
@@ -79,6 +115,7 @@ export function MonsoonView({ hazard, data, lead, showObserved }: { hazard: Haza
           </CardContent>
         </Card>
         <div className="flex flex-col gap-4">
+          <MonsoonWhy init={data.init} lead={lead} />
           <Card size="sm">
             <CardHeader><CardTitle>GEFS regime call</CardTitle></CardHeader>
             <CardContent>

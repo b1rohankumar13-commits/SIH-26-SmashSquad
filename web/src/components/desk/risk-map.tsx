@@ -9,7 +9,7 @@ import { useTheme } from "next-themes";
 import { useMemo } from "react";
 import { Map, useControl } from "react-map-gl/maplibre";
 
-import { pctLabel, RAMP, rampColour, regionTone, type Cell } from "@/lib/risk";
+import { confidence, GRADE_COLOUR, GRADE_LABEL, pctLabel, RAMP, rampColour, regionTone, type Cell } from "@/lib/risk";
 import { areaLabel } from "@/components/desk/panels";
 import type { Box, Direction, Explanation, Mode, Track, View } from "@/lib/types";
 
@@ -44,6 +44,8 @@ export interface RegionLayer {
   obsFa: number[];
   flagMiss: number[];
   flagFa: number[];
+  /** Grade cut-offs for the confidence view (index.json regions.confidence_cuts). */
+  cuts?: [number, number];
 }
 
 type RegionFeature = GeoJSON.Feature<GeoJSON.Geometry, { id: number; name: string }>;
@@ -79,8 +81,18 @@ export function RiskMap({
 
   const layers = useMemo(() => {
     const out = [];
-    const byRegion = view === "regions" && regions;
-    if (byRegion) {
+    const byRegion = view !== "cells" && regions;
+    if (view === "confidence" && regions?.cuts) {
+      out.push(new GeoJsonLayer<{ id: number; name: string }>({
+        id: "region-risk", data: regions.geo as never, pickable: true, stroked: false, filled: true,
+        getFillColor: (f) => {
+          const i = (f as RegionFeature).properties.id;
+          return regions.obsMiss[i] < 0 || regions.pMiss[i] === undefined ? [0, 0, 0, 0]
+            : GRADE_COLOUR[confidence(regions.pMiss[i], regions.pFa[i], regions.cuts!).grade];
+        },
+        updateTriggers: { getFillColor: [regions] },
+      }));
+    } else if (byRegion) {
       out.push(new GeoJsonLayer<{ id: number; name: string }>({
         id: "region-risk", data: regions.geo as never, pickable: true, stroked: false, filled: true,
         getFillColor: (f) => {
@@ -167,7 +179,8 @@ export function RiskMap({
       if (regions.obsMiss[id] < 0) return { html: `<b>${name}</b><br/>Not covered for this hazard`, style };
       return {
         html: `<div style="font:12px/1.45 var(--font-sans),system-ui;font-variant-numeric:tabular-nums">
-          <b>${name}</b><br/>Chance GEFS misses an event here ${pctLabel(regions.pMiss[id])} · over-calls one ${pctLabel(regions.pFa[id])}<br/>
+          <b>${name}</b><br/>${regions.cuts ? (() => { const c = confidence(regions.pMiss[id], regions.pFa[id], regions.cuts!);
+            return `Forecast confidence ${Math.round(c.conf * 100)}% (${GRADE_LABEL[c.grade]})<br/>`; })() : ""}Chance GEFS misses an event here ${pctLabel(regions.pMiss[id])} · over-calls one ${pctLabel(regions.pFa[id])}<br/>
           ${showObserved ? regionOutcome(regions.obsMiss[id], regions.obsFa[id]) : ""}</div>`,
         style,
       };

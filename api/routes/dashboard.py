@@ -178,7 +178,8 @@ def regions(hazard: str, init: str = Query(..., pattern=r"^\d{8}$")) -> dict:
             "obs_miss": np.asarray(a["region_obs_miss"][k]).astype(int).tolist(),
             "obs_fa": np.asarray(a["region_obs_fa"][k]).astype(int).tolist(),
             "flag_miss": np.asarray(a["region_flag_miss"][k]).astype(int).tolist(),
-            "flag_fa": np.asarray(a["region_flag_fa"][k]).astype(int).tolist()}
+            "flag_fa": np.asarray(a["region_flag_fa"][k]).astype(int).tolist(),
+            "exp_miss": _round(a["region_exp_miss"][k], 2), "exp_fa": _round(a["region_exp_fa"][k], 2)}
 
 
 @lru_cache(maxsize=4)
@@ -191,8 +192,10 @@ def _explain(hazard: str) -> dict:
 def explain(hazard: str, init: str = Query(..., pattern=r"^\d{8}$"), lead: int = Query(..., ge=1, le=9)) -> dict:
     """Top flagged areas per direction for one map, with their meteorological drivers
     (from scripts/export_explanations.py). Empty lists where nothing is flagged."""
-    _hazard(hazard)
+    h = _hazard(hazard)
     per = _explain(hazard).get(init, {}).get(str(lead), {})
+    if h["kind"] == "regional":  # monsoon: drivers per flagged target (scripts/export_monsoon_explanations.py)
+        return per
     return {"miss": per.get("miss", []), "false_alarm": per.get("false_alarm", [])}
 
 

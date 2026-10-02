@@ -21,9 +21,8 @@ GEFS stores are (src/acquisition/download_gefs_reforecast.py):
 and interpolated to the 0.5 deg cell-centred model grid (5.25-37.75N, 65.25-99.75E).
 Writes data/interim/forecasts/neps/{rain,tmax,mv}/<init>00.nc.
 
-The ECDS variable names below follow the NEPS pilot (src/acquisition/download_tigge_30_day_pilot.py)
-for the fields it used; the others (2 m / dewpoint / max temperature, surface pressure,
-temperature) should be checked against the ECDS form with --dry-run before the first download.
+Variable names match the ECDS request schema (api/retrieve/v1/processes/tigge-forecasts); TIGGE has
+no regridding option, so fields arrive on the native NEPS grid and are interpolated here.
 """
 
 from __future__ import annotations
@@ -50,14 +49,18 @@ HALF_DAY_STEPS = [str(12 * k) for k in range(1, 2 * LEADS + 1)]
 FORECAST_TYPES = {"cf": "control_forecast", "pf": "perturbed_forecast"}
 PRODUCTS = {
     "surface": {"level_type": "single_level", "leadtime_hour": DAY_STEPS,
-                "variable": ["total_precipitation", "mean_sea_level_pressure", "2m_temperature",
-                             "2m_dewpoint_temperature", "surface_pressure"]},
+                "variable": ["total_precipitation", "mean_sea_level_pressure", "2_m_temperature",
+                             "2_m_dewpoint_temperature", "surface_pressure"]},
     "tmax": {"level_type": "single_level", "leadtime_hour": HALF_DAY_STEPS,
-             "variable": ["maximum_2m_temperature_in_the_last_6_hours"]},
-    "pressure": {"level_type": "pressure", "level_value": ["300_hpa", "500_hpa", "850_hpa"],
-                 "leadtime_hour": DAY_STEPS[1:],
-                 "variable": ["geopotential_height", "specific_humidity", "temperature",
-                              "u_component_of_wind", "v_component_of_wind"]},
+             "variable": ["maximum_2_m_temperature_in_the_last_6_hours"]},
+    # One request per level, holding only the variables used there: a combined request returns
+    # every variable at every level (~2.5x the data for the 11 perturbed members).
+    "p850": {"level_type": "pressure", "level_value": ["850_hpa"], "leadtime_hour": DAY_STEPS[1:],
+             "variable": ["specific_humidity", "temperature", "u_component_of_wind", "v_component_of_wind"]},
+    "p500": {"level_type": "pressure", "level_value": ["500_hpa"], "leadtime_hour": DAY_STEPS[1:],
+             "variable": ["geopotential_height"]},
+    "p300": {"level_type": "pressure", "level_value": ["300_hpa"], "leadtime_hour": DAY_STEPS[1:],
+             "variable": ["geopotential_height"]},
 }
 
 
@@ -66,26 +69,44 @@ def requests(init: str) -> list[tuple[Path, dict]]:
     for product, spec in PRODUCTS.items():
         for ft, name in FORECAST_TYPES.items():
             req = {"origin": "ncmrwf", "year": init[:4], "month": init[4:6], "day": init[6:8], "time": "00:00",
-                   "forecast_type": name, "data_format": "grib", "area": AREA, "grid": ["0.5", "0.5"],
+                   "forecast_type": name, "data_format": "grib", "area": AREA,
                    **{k: v for k, v in spec.items()}}
             out.append((RAW / init / f"neps_{init}_00_{product}_{ft}.grib2", req))
     return out
 
 
 def download(init: str) -> None:
+    """Submit all requests at once: each waits in ECMWF's tape queue for minutes, so in
+    parallel the total is about the slowest one rather than the sum."""
+    from concurrent.futures import ThreadPoolExecutor
+
     import cdsapi
     url = os.environ.get("ECDS_URL", "https://ecds.ecmwf.int/api")
-    client = cdsapi.Client(url=url, key=os.environ.get("ECDS_KEY"))
-    for path, req in requests(init):
-        if path.exists() and path.stat().st_size > 0:
+
+    def one(item: tuple[Path, dict]) -> None:
+        path, req = item
+        product, ft = path.stem.split("_00_")[1].rsplit("_", 1)
+        have = raw_file(path.stem.split("_")[1], product, ft)
+        if have.exists() and have.stat().st_size > 0:
             print(f"{path.name}: exists", flush=True)
-            continue
+            return
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".part")
         print(f"{path.name}: requesting ...", flush=True)
-        client.retrieve(DATASET, req, str(tmp))
+        cdsapi.Client(url=url, key=os.environ.get("ECDS_KEY"), quiet=True).retrieve(DATASET, req, str(tmp))
         tmp.replace(path)
         print(f"{path.name}: {path.stat().st_size / 1e6:.1f} MB", flush=True)
+
+    todo = requests(init)
+    with ThreadPoolExecutor(len(todo)) as pool:
+        list(pool.map(one, todo))  # re-raises the first failure
+
+
+def raw_file(init: str, product: str, ft: str) -> Path:
+    """Per-level pressure files, or the older all-level "pressure" file when that is what is on disk."""
+    f = RAW / init / f"neps_{init}_00_{product}_{ft}.grib2"
+    combined = RAW / init / f"neps_{init}_00_pressure_{ft}.grib2"
+    return combined if product.startswith("p") and product[1:].isdigit() and not f.exists() and combined.exists() else f
 
 
 def read(init: str, product: str, short: str, level: int | None = None) -> xr.DataArray:
@@ -93,7 +114,7 @@ def read(init: str, product: str, short: str, level: int | None = None) -> xr.Da
     parts = []
     for ft in FORECAST_TYPES:
         keys = {"shortName": short, **({"level": level} if level else {})}
-        ds = xr.open_dataset(RAW / init / f"neps_{init}_00_{product}_{ft}.grib2", engine="cfgrib",
+        ds = xr.open_dataset(raw_file(init, product, ft), engine="cfgrib",
                              backend_kwargs={"filter_by_keys": keys, "indexpath": ""})
         a = ds[list(ds.data_vars)[0]]
         if "number" not in a.dims:
@@ -136,10 +157,10 @@ def convert(init: str) -> None:
     rain = np.diff(tp.sel(step=[24 * d for d in range(0, LEADS + 1)]).values, axis=1).clip(0).astype(np.float32)
     msl = at_days(read(init, "surface", "msl"))
     to_store(init, {"total_precipitation": rain, "mean_sea_level_pressure": msl}, "rain", levels={
-        "u_wind": {850: at_days(read(init, "pressure", "u", 850))},
-        "v_wind": {850: at_days(read(init, "pressure", "v", 850))},
-        "specific_humidity": {850: at_days(read(init, "pressure", "q", 850))},
-        "geopotential_height": {500: at_days(read(init, "pressure", "gh", 500))},
+        "u_wind": {850: at_days(read(init, "p850", "u", 850))},
+        "v_wind": {850: at_days(read(init, "p850", "v", 850))},
+        "specific_humidity": {850: at_days(read(init, "p850", "q", 850))},
+        "geopotential_height": {500: at_days(read(init, "p500", "gh", 500))},
     })
     mx = read(init, "tmax", "mx2t6")
     tmax = np.stack([mx.sel(step=[24 * (d - 1) + 12, 24 * d]).max("step").values for d in range(1, LEADS + 1)], 1)
@@ -148,9 +169,9 @@ def convert(init: str) -> None:
     e = 611.2 * np.exp(17.67 * (td - 273.15) / (td - 29.65))  # vapour pressure (Pa), Bolton 1980
     to_store(init, {"pres_msl": msl, "tmp_2m": at_days(read(init, "surface", "2t")),
                     "spfh_2m": (0.622 * e / (sp - 0.378 * e)).astype(np.float32),
-                    "tmp_850": at_days(read(init, "pressure", "t", 850)),
-                    "hgt_500": at_days(read(init, "pressure", "gh", 500)),
-                    "hgt_300": at_days(read(init, "pressure", "gh", 300))}, "mv")
+                    "tmp_850": at_days(read(init, "p850", "t", 850)),
+                    "hgt_500": at_days(read(init, "p500", "gh", 500)),
+                    "hgt_300": at_days(read(init, "p300", "gh", 300))}, "mv")
 
 
 def main() -> None:

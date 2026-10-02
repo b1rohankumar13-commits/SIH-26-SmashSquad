@@ -7,6 +7,7 @@ import { useEffect, useMemo } from "react";
 import { AppShell } from "@/components/app-shell";
 import { CasePicker, DeskControls } from "@/components/desk/controls";
 import { MonsoonView } from "@/components/desk/monsoon-view";
+import { ConfidenceCard, ConfidenceLegend, RegionReasonsCard } from "@/components/desk/confidence";
 import { RegionCard } from "@/components/desk/region-card";
 import { CaseCard, ExplainCard, GridMetrics, LeadChart, MapLegend, MetricsSkeleton, ModelFacts, SkillCard } from "@/components/desk/panels";
 import { Badge } from "@/components/ui/badge";
@@ -89,8 +90,8 @@ export function Desk() {
   const regionLayer = useMemo(() => (geo.data && regions.data ? {
     geo: geo.data, pMiss: regions.data.p_miss[L], pFa: regions.data.p_fa[L],
     obsMiss: regions.data.obs_miss[L], obsFa: regions.data.obs_fa[L],
-    flagMiss: regions.data.flag_miss[L], flagFa: regions.data.flag_fa[L],
-  } : undefined), [geo.data, regions.data, L]);
+    flagMiss: regions.data.flag_miss[L], flagFa: regions.data.flag_fa[L], cuts: hazard?.regions?.confidence_cuts,
+  } : undefined), [geo.data, regions.data, L, hazard]);
   const error = hazards.error ?? inits.error ?? grid.error ?? monsoon.error;
 
   return (
@@ -140,8 +141,12 @@ export function Desk() {
                   </CardContent>
                 </Card>
                 <div className="flex flex-col gap-4">
-                  <ExplainCard data={explain.data} mode={mode} />
-                  {scales && <MapLegend scales={scales} mode={mode} event={event} showObserved={state.observed}
+                  {hasRegions && state.view !== "cells"
+                    ? <RegionReasonsCard data={regions.data} explain={explain.data} lead={state.lead} mode={mode}
+                        cuts={state.view === "confidence" ? hazard.regions?.confidence_cuts : undefined} />
+                    : <ExplainCard data={explain.data} mode={mode} />}
+                  {hasRegions && state.view === "confidence" ? <Card size="sm"><CardHeader><CardTitle>How to read the map</CardTitle></CardHeader>
+                    <CardContent><ConfidenceLegend /></CardContent></Card> : scales && <MapLegend scales={scales} mode={mode} event={event} showObserved={state.observed}
                     showTracks={tracked && state.observed} byRegion={hasRegions && state.view === "regions"} />}
                   <ModelFacts hazard={hazard} falseAlarmNote={hazard.id === "rain"
                     ? `False alarms are largely visible in GEFS itself: when most members call ${event}, it doesn’t happen about ${oneIn(hazard.tiers.false_alarm.high.precision)} times. The model’s value is mainly on misses — events GEFS gave no warning of.`
@@ -149,8 +154,11 @@ export function Desk() {
                   <SkillCard hazard={hazard} labels={DIRECTION_LABEL} cuts={thresholds ?? undefined} />
                 </div>
               </div>
-              {hasRegions && <RegionCard hazard={hazard} data={regions.data} mode={mode} lead={state.lead}
-                showObserved={state.observed} onLead={(lead) => update({ lead })} />}
+              {hasRegions && (state.view === "confidence"
+                ? <ConfidenceCard data={regions.data} cuts={hazard.regions?.confidence_cuts} lead={state.lead}
+                    showObserved={state.observed} onLead={(lead) => update({ lead })} />
+                : <RegionCard hazard={hazard} data={regions.data} mode={mode} lead={state.lead}
+                    showObserved={state.observed} onLead={(lead) => update({ lead })} />)}
               <LeadChart rows={leads.data} mode={mode} showObserved={state.observed} lead={state.lead} init={init!} shift={shift} />
             </>
           )}

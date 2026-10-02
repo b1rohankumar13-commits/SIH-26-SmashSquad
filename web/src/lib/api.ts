@@ -44,6 +44,11 @@ export const useSubdivisions = (enabled: boolean) =>
 export const useRegions = (hazard?: string, init?: string) =>
   useSWR<RegionData>(hazard && init ? `/api/regions/${hazard}?init=${init}` : null, fetcher, opts);
 
+/** Monsoon: drivers per flagged regime target at one lead. */
+export const useMonsoonExplain = (init?: string, lead?: number) =>
+  useSWR<Record<string, { name: string; share: number; value: string }[]>>(
+    init && lead ? `/api/explain/monsoon?init=${init}&lead=${lead}` : null, fetcher, opts);
+
 export const useExplain = (hazard?: string, init?: string, lead?: number) =>
   useSWR<Explanation>(hazard && init && lead ? `/api/explain/${hazard}?init=${init}&lead=${lead}` : null, fetcher, opts);
 
@@ -66,8 +71,25 @@ export const useLiveJob = (job?: string) =>
   useSWR<LiveJob>(job ? `/api/live/jobs/${job}` : null, fetcher,
     { refreshInterval: (d) => (d && d.status !== "running" ? 0 : 2000) });
 
-export async function startLiveRun(body: { source: LiveSource; init?: string; fetch: boolean; realtime: boolean }) {
+export async function startLiveRun(body: { source: LiveSource; init?: string; fetch: boolean; realtime: boolean; demo?: boolean }) {
   const res = await fetch("/api/live/run", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? `${res.status} ${res.statusText}`);
   return (await res.json()) as { job: string };
+}
+
+export interface LiveAuto {
+  enabled: boolean;
+  last_check: string | null;
+  last_job: string | null;
+  last_init: string | null;
+  every_minutes: number;
+  next_expected_init: string;
+}
+
+export const useLiveAuto = () => useSWR<LiveAuto>("/api/live/auto", fetcher, { refreshInterval: 60_000 });
+
+export async function setLiveAuto(enabled: boolean) {
+  const res = await fetch("/api/live/auto", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled }) });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return (await res.json()) as LiveAuto;
 }

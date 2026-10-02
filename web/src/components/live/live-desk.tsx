@@ -1,26 +1,28 @@
 "use client";
 
-import { AlertCircle, CheckCircle2, Download, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, Download, FileDown, Loader2 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useState, useTransition } from "react";
 
 import { AppShell } from "@/components/app-shell";
 import { ExplainCard, MapLegend } from "@/components/desk/panels";
+import { ConfidenceCard, ConfidenceLegend, RegionReasonsCard } from "@/components/desk/confidence";
 import { RegionCard } from "@/components/desk/region-card";
 import type { RegionLayer } from "@/components/desk/risk-map";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
-  startLiveRun, useHazards, useLiveExplain, useLiveGrid, useLiveJob, useLiveRegions, useLiveRuns, useSubdivisions,
+  setLiveAuto, startLiveRun, useHazards, useLiveAuto, useLiveExplain, useLiveGrid, useLiveJob, useLiveRegions, useLiveRuns, useSubdivisions,
 } from "@/lib/api";
 import { EVENT_WORD, formatInit, formatValid } from "@/lib/format";
-import { atIntensity, classify, scaleFor, SHOW_FROM, type Scale, type Thresholds } from "@/lib/risk";
+import { atIntensity, classify, pctLabel, scaleFor, SHOW_FROM, type Scale, type Thresholds } from "@/lib/risk";
 import type { Direction, Hazard, LiveRun, LiveSource, Mode, View } from "@/lib/types";
 
 const RiskMap = dynamic(() => import("@/components/desk/risk-map").then((m) => m.RiskMap), {
@@ -51,7 +53,7 @@ function useLiveState() {
     hazard: params.get("hazard") ?? undefined,
     lead: Number.isInteger(lead) && lead >= 1 && lead <= 9 ? lead : 1,
     mode: mode && MODES.some((m) => m.value === mode) ? mode : ("both" as Mode),
-    view: (params.get("view") === "regions" ? "regions" : "cells") as View,
+    view: ((["regions", "confidence"] as const).find((v) => v === params.get("view")) ?? "cells") as View,
     compare: params.get("compare") === "1",
     observed: params.get("observed") !== "0",
   };
@@ -76,10 +78,39 @@ function Field({ label, htmlFor, children }: { label: string; htmlFor?: string; 
   );
 }
 
+/** Automatic daily GEFS run (in the API process): fetches and analyses each new run as it is posted. */
+function AutoSwitch({ onNewRun }: { onNewRun: () => void }) {
+  const auto = useLiveAuto();
+  const a = auto.data;
+  const job = useLiveJob(a?.last_job ?? undefined);
+  useEffect(() => {
+    if (job.data?.status === "done") onNewRun();
+  }, [job.data?.status]); // eslint-disable-line react-hooks/exhaustive-deps
+  const toggle = async (v: boolean) => auto.mutate(await setLiveAuto(v), { revalidate: false });
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+      <label className="flex items-center gap-2">
+        <Switch checked={!!a?.enabled} disabled={!a} onCheckedChange={toggle} />
+        Update automatically every day (GEFS)
+      </label>
+      {a?.enabled && (
+        <span className="text-xs text-muted-foreground tabular-nums">
+          checks every {a.every_minutes} min
+          {a.last_init && ` · last fetched ${formatInit(a.last_init)}${job.data?.status === "running" ? " (running…)" : ""}`}
+        </span>
+      )}
+    </div>
+  );
+}
+
 /** Fetch the newest forecast for a source and run the models on it, with live progress. */
 function FetchCard({ source, onDone }: { source: LiveSource; onDone: (init: string) => void }) {
   const [job, setJob] = useState<string>();
   const [error, setError] = useState<string>();
+  // Empty = newest available. A past date runs on observed inputs so it can be validated.
+  const [date, setDate] = useState("");
+  // Demo mode: the download is simulated and the forecast comes from disk (no network / queue risk).
+  const [demo, setDemo] = useState(true);
   const status = useLiveJob(job);
   const running = status.data?.status === "running" || (job && !status.data);
   useEffect(() => {
@@ -88,7 +119,8 @@ function FetchCard({ source, onDone }: { source: LiveSource; onDone: (init: stri
   const go = async () => {
     setError(undefined);
     try {
-      setJob((await startLiveRun({ source, fetch: true, realtime: true })).job);
+      const init = date ? date.replaceAll("-", "") : undefined;
+      setJob((await startLiveRun({ source, init, fetch: true, realtime: !init, demo })).job);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -99,9 +131,15 @@ function FetchCard({ source, onDone }: { source: LiveSource; onDone: (init: stri
       <div className="flex flex-wrap items-center gap-3">
         <Button onClick={go} disabled={!!running}>
           {running ? <Loader2 aria-hidden className="animate-spin" /> : <Download aria-hidden />}
-          Fetch newest {SOURCE[source].short} &amp; analyse
+          Fetch {date ? "" : "newest "}{SOURCE[source].short} &amp; analyse
         </Button>
+        <Input type="date" aria-label="Forecast date (empty = newest)" value={date} onChange={(e) => setDate(e.target.value)}
+          className="h-8 w-40 tabular-nums" />
         <span className="text-xs text-muted-foreground">{SOURCE[source].note}</span>
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Switch checked={demo} onCheckedChange={setDemo} size="sm" />
+          Demo mode (saved data)
+        </label>
       </div>
       {(running || status.data) && (
         <p aria-live="polite" className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -151,8 +189,9 @@ function LiveMap({ run, hazard, lead, mode, view, observed, title }: {
   const regionLayer = useMemo<RegionLayer | undefined>(() => (geo.data && regions.data ? {
     geo: geo.data, pMiss: regions.data.p_miss[L], pFa: regions.data.p_fa[L], obsMiss: regions.data.obs_miss[L],
     obsFa: regions.data.obs_fa[L], flagMiss: regions.data.flag_miss[L], flagFa: regions.data.flag_fa[L],
+    cuts: hazard.regions?.confidence_cuts,
   } : geo.data ? { geo: geo.data, pMiss: [], pFa: [], obsMiss: [], obsFa: [], flagMiss: [], flagFa: [] } : undefined),
-  [geo.data, regions.data, L]);
+  [geo.data, regions.data, L, hazard]);
   const shift = run.hazards[hazard.id]?.valid_shift;
   const validated = !!run.hazards[hazard.id]?.validated;
   return (
@@ -169,6 +208,12 @@ function LiveMap({ run, hazard, lead, mode, view, observed, title }: {
           regions={regionLayer}
           areas={view === "cells" ? explain.data : undefined}
           label={`${hazard.label} bust-risk map, ${SOURCE[run.source].short}, valid ${formatValid(run.init, lead, shift)}`} />
+        {cells && !cells.some((c) => c.missFlag || c.faFlag) && (
+          <p className="text-sm text-muted-foreground">
+            Nothing crosses the alert threshold on Day {lead}: the highest chance of a bust anywhere is{" "}
+            {pctLabel(Math.max(...cells.map((c) => Math.max(c.pMiss, c.pFa))))}, so {SOURCE[run.source].short} is expected to hold.
+          </p>
+        )}
       </CardContent>
     </Card>
   );
@@ -216,6 +261,7 @@ export function LiveDesk() {
             </Field>
             <FetchCard source={state.source} onDone={(init) => { runs.mutate(); update({ init }); }} />
           </div>
+          <AutoSwitch onNewRun={() => runs.mutate()} />
 
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
             <Field label="Forecast issued (00 UTC)" htmlFor={ids.run}>
@@ -261,7 +307,14 @@ export function LiveDesk() {
               onValueChange={(v) => v[0] && update({ view: v[0] as View })} className="h-8">
               <ToggleGroupItem value="cells" className="h-8 px-3">Grid cells</ToggleGroupItem>
               <ToggleGroupItem value="regions" className="h-8 px-3">Subdivisions</ToggleGroupItem>
+              <ToggleGroupItem value="confidence" className="h-8 px-3">Confidence</ToggleGroupItem>
             </ToggleGroup>
+            {run && hazard && (
+              <a href={`/api/bulletin/${hazard.id}.csv?init=${run.init}&source=${run.source}`} download
+            className={buttonVariants({ variant: "outline", size: "sm" })}>
+            <FileDown aria-hidden />Download bulletin (CSV)
+          </a>
+            )}
             <label className="flex items-center gap-2 text-sm">
               <Switch checked={state.compare && !!other} disabled={!other} onCheckedChange={(v) => update({ compare: v })} />
               Compare with {SOURCE[OTHER[state.source]].short}{!other && run ? " (no run for this date)" : ""}
@@ -292,9 +345,12 @@ export function LiveDesk() {
                 title={`${SOURCE[other.source].short} · ${hazard.label} · Day ${state.lead}`} />
             ) : (
               <div className="flex flex-col gap-4">
-                <ExplainCard data={explain.data} mode={state.mode} />
+                {state.view === "cells" ? <ExplainCard data={explain.data} mode={state.mode} />
+                  : <RegionReasonsCard data={regions.data} explain={explain.data} lead={state.lead} mode={state.mode}
+                      cuts={state.view === "confidence" ? hazard.regions?.confidence_cuts : undefined} />}
                 {state.observed && validated && <ValidationCard run={run} hazard={hazard.id} mode={state.mode} />}
-                {scales && <MapLegend scales={scales} mode={state.mode} event={EVENT_WORD[hazard.id] ?? "event"}
+                {state.view === "confidence" ? <Card size="sm"><CardHeader><CardTitle>How to read the map</CardTitle></CardHeader>
+                  <CardContent><ConfidenceLegend /></CardContent></Card> : scales && <MapLegend scales={scales} mode={state.mode} event={EVENT_WORD[hazard.id] ?? "event"}
                   showObserved={state.observed && validated} byRegion={state.view === "regions"} />}
                 {subs.length > 0 && (
                   <Card size="sm">
@@ -321,8 +377,11 @@ export function LiveDesk() {
               </div>
             </div>
           )}
-          <RegionCard hazard={hazard} data={regions.data} mode={state.mode} lead={state.lead} showSkill={false}
-            showObserved={state.observed && validated} onLead={(lead) => update({ lead })} />
+          {state.view === "confidence"
+            ? <ConfidenceCard data={regions.data} cuts={hazard.regions?.confidence_cuts} lead={state.lead}
+                showObserved={state.observed && validated} onLead={(lead) => update({ lead })} />
+            : <RegionCard hazard={hazard} data={regions.data} mode={state.mode} lead={state.lead} showSkill={false}
+                showObserved={state.observed && validated} onLead={(lead) => update({ lead })} />}
         </>
       )}
     </AppShell>

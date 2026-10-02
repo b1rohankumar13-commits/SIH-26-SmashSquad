@@ -81,9 +81,10 @@ def regions(source: str, init: str, hazard: str) -> dict:
     names = [f["properties"]["name"] for f in
              json.loads((PROJECT_ROOT / "outputs" / "dashboard" / "subdivisions.geojson").read_text())["features"]]
     idx = json.loads((PROJECT_ROOT / "outputs" / "dashboard" / "index.json").read_text())
-    arr = {k: np.load(d / f"region_{k}.npy") for k in ("p_miss", "p_fa", "obs_miss", "obs_fa", "flag_miss", "flag_fa")}
+    arr = {k: np.load(d / f"region_{k}.npy") for k in ("p_miss", "p_fa", "obs_miss", "obs_fa", "flag_miss", "flag_fa",
+                                                        "exp_miss", "exp_fa")}
     return {"init": init, "names": names, "covered": idx[hazard]["regions"]["covered"],
-            **{k: (_round(v, 3) if k.startswith("p_") else v.astype(int).tolist()) for k, v in arr.items()}}
+            **{k: (_round(v, 3) if k.startswith(("p_", "exp_")) else v.astype(int).tolist()) for k, v in arr.items()}}
 
 
 @router.get("/{source}/{init}/explain/{hazard}")
@@ -98,6 +99,9 @@ class RunRequest(BaseModel):
     init: str | None = Field(default=None, pattern=r"^\d{8}$")
     fetch: bool = True
     realtime: bool = True
+    # Demo mode: simulate the download (~5 s) and analyse a forecast already on disk. On unless the
+    # caller explicitly asks for a real download (demo=false), so no client downloads by accident.
+    demo: bool = True
 
 
 @router.post("/run")
@@ -107,9 +111,13 @@ def start(req: RunRequest) -> dict:
         raise HTTPException(409, "A live run is already in progress.")
     JOBS.mkdir(parents=True, exist_ok=True)
     job = uuid.uuid4().hex[:10]
-    cmd = [ML_PYTHON, "-u", "-m", "scripts.live_forecast", "--source", req.source]
-    cmd += ["--init", req.init] if req.init else []
-    cmd += (["--fetch"] if req.fetch else []) + (["--realtime"] if req.realtime else [])
+    if req.demo:
+        cmd = [ML_PYTHON, "-u", "-m", "scripts.live_demo", "--source", req.source]
+        cmd += ["--init", req.init] if req.init else []
+    else:
+        cmd = [ML_PYTHON, "-u", "-m", "scripts.live_forecast", "--source", req.source]
+        cmd += ["--init", req.init] if req.init else []
+        cmd += (["--fetch"] if req.fetch else []) + (["--realtime"] if req.realtime else [])
     log = open(JOBS / f"{job}.log", "w", encoding="utf-8")
     env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
     _procs[job] = subprocess.Popen(cmd, cwd=PROJECT_ROOT, stdout=log, stderr=subprocess.STDOUT, env=env)
@@ -130,3 +138,62 @@ def job(job: str) -> dict:
     done = next((l for l in reversed(lines) if l.startswith("done in")), None)
     init = done.split("\\")[-1].split("/")[-1] if done else None
     return {"job": job, "status": status, "source": req["source"], "init": init, "log": lines[-12:]}
+
+
+# ---------------------------------------------------------------- automatic daily run
+# While enabled, a background thread checks every 30 min whether the newest GEFS run that NOAA
+# should have posted (00 UTC + ~6 h) has been analysed, and if not, fetches and runs it with the
+# real-time inputs. In-memory switch (off by default, or SIH_AUTO_LIVE=1): nothing is scheduled on
+# the machine itself, and it stops with the API.
+import threading
+from datetime import datetime, timedelta, timezone
+
+AUTO_EVERY_S = 30 * 60
+_auto = {"enabled": os.environ.get("SIH_AUTO_LIVE") == "1", "last_check": None, "last_job": None, "last_init": None}
+_auto_lock = threading.Lock()
+
+
+def _newest_gefs() -> str:
+    return (datetime.now(timezone.utc) - timedelta(hours=6)).strftime("%Y%m%d")
+
+
+def _auto_tick() -> None:
+    with _auto_lock:
+        _auto["last_check"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        init = _newest_gefs()
+        if (LIVE / "gefs" / init / "meta.json").exists() or any(p.poll() is None for p in _procs.values()):
+            return
+        _auto["last_job"] = start(RunRequest(source="gefs", init=init, fetch=True, realtime=True, demo=False))["job"]
+        _auto["last_init"] = init
+
+
+def _auto_loop() -> None:
+    import time
+    while True:
+        if _auto["enabled"]:
+            try:
+                _auto_tick()
+            except Exception as e:  # keep the loop alive; the next tick retries
+                _auto["last_error"] = str(e)
+        time.sleep(AUTO_EVERY_S)
+
+
+threading.Thread(target=_auto_loop, daemon=True, name="live-auto").start()
+
+
+class AutoRequest(BaseModel):
+    enabled: bool
+
+
+@router.get("/auto")
+def auto_status() -> dict:
+    return {**_auto, "every_minutes": AUTO_EVERY_S // 60, "next_expected_init": _newest_gefs()}
+
+
+@router.post("/auto")
+def auto_set(req: AutoRequest) -> dict:
+    """Turn the automatic daily GEFS run on or off (checks immediately when turned on)."""
+    _auto["enabled"] = req.enabled
+    if req.enabled:
+        threading.Thread(target=_auto_tick, daemon=True).start()
+    return auto_status()
