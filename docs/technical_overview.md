@@ -1,5 +1,8 @@
 # Technical Overview — How This System Works
 
+> **Superseded:** this describes the original design plan. For the system as built (models,
+> bust labels, results, dashboard), see [problem_statement_and_solution.md](problem_statement_and_solution.md).
+
 This document explains the project end-to-end for someone joining without prior
 context on the codebase. It's self-contained — no need to have looked at the repo
 first.

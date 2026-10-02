@@ -1,152 +1,187 @@
-# Problem Statement & Our Solution
+# SIH26079 — AI-Based Forecast Bust Detection: what we built
 
-> **Note:** No official SIH problem-statement number/title was found in this repo.
-> This document reconstructs the PS from `README.md` and project discussion. Replace
-> the framing below with the exact official PS text/number if you have it, so the
-> submission matches word-for-word.
+**Problem statement (MoES / NCMRWF):** detect, ahead of time, where and when an operational
+ensemble forecast is likely to fail ("bust") for high-impact Indian weather, and explain why.
 
----
-
-## 1. The problem
-
-Numerical weather forecasts — the ones IMD, NCMRWF, and downstream agencies act on —
-are usually good, but not always. Occasionally a forecast **busts**: it materially
-diverges from what actually happens. A "calm" forecast turns into a cyclone landfall
-surprise; a modest-rain forecast turns into a flash flood; a monsoon-phase call flips.
-
-The trouble isn't that forecasts fail sometimes — every forecast system does. The
-trouble is that **today there is no signal, ahead of time, telling you a given
-forecast is at elevated risk of busting.** Every forecast is presented with the same
-implicit confidence, whether it's a routine, reliable Day-3 call or a fragile one for
-a system the model is known to struggle with. Decision-makers who act on the forecast
-— evacuation calls, dam releases, sowing advisories, grid-load planning — have no way
-to tell those two situations apart until it's too late.
-
-This matters most for exactly the high-impact, high-uncertainty weather that drives
-disaster response in India:
-
-- **Heavy rainfall** (flash floods, urban flooding)
-- **Cyclones** (Bay of Bengal / Arabian Sea)
-- **Monsoon depressions**
-- **Heat waves**
-- **Western disturbances**
-- **Active/break monsoon phase**
-
-These six categories were chosen because they're both high-consequence *and*
-disproportionately prone to forecast busts — which is exactly where a reliability
-signal is most valuable.
-
-**In one sentence:** *India's forecasts don't come with an honest signal of when
-they're about to fail — and that missing signal is what this project builds.*
+**Our answer, BustSentinel:** a reliability layer on top of an existing ensemble forecast. It does
+not make a new weather forecast; for every grid cell, IMD subdivision and lead day it says how
+likely the forecast already issued is to be confidently wrong, in which direction, and which
+meteorological signals drive that risk.
 
 ---
 
-## 2. What we're building
+## 1. Expected outcomes — where we stand
 
-A system that predicts, for each Day 1–10 forecast cycle, **the probability that this
-forecast will bust** — spatially, as a **gridded map over India**, and as a single
-**overall probability**. Not a new weather forecast. A **confidence layer on top of
-the existing forecast**, telling you where and how much to distrust it.
-
-Outputs:
-- A **gridded bust-probability map** (grid / district / state / meteorological-region
-  views) — where is this forecast fragile, right now, for this cycle.
-- A single **overall bust probability** per cycle.
-- Category-level evaluation (which of the six hazard types is driving the risk),
-  even though the model predicts one unified bust signal (see §4).
+| PS expected outcome | Status | Where |
+|---|---|---|
+| Region-wise forecast confidence map, Day 1–10 | Done for **Days 1–9** (Day 10 out of scope, see §8) | Forecast Desk → *Confidence* view; per-subdivision table D1–D9 |
+| Bust probability per region | Done: per 0.5° cell and per IMD subdivision (36), for every hazard and lead | Desk → *Cells* / *Subdivisions*; `/api/regions/{hazard}`; CSV bulletin |
+| Error-prone area detection | Done: flagged cells and subdivisions, largest flagged areas ranked by expected busts | Map + "Where" cards; subdivision ranking |
+| Explainable output (key meteorological reasons) | Done: top drivers per flagged area and per subdivision, with physical values | "Why" cards; hover any driver for its meaning |
+| Prototype dashboard / API for operational use | Done: Next.js dashboard + FastAPI; live runs on today's GEFS or NCMRWF NEPS; CSV bulletin | `/` desk, `/case-studies`, `/live`; `/api/*` |
 
 ---
 
-## 3. Why this is hard (and why it's not just "predict the weather")
+## 2. Hazards covered
 
-- **Ground truth is derived, not observed.** "Bust" isn't a raw measurement — it has
-  to be defined per hazard (rainfall exceedance, cyclone track/intensity error, heat
-  wave miss, etc.) and then combined into one label. That labeling logic *is* part of
-  the modelling work (`src/detection/`).
-- **Busts are rare.** By definition they're the tail, not the average case — every
-  design choice downstream (model size, pretraining, fusion) exists to cope with a
-  small positive-label budget.
-- **The failure mode is spatial and multi-scale.** A bust in Kerala doesn't mean much
-  for Rajasthan. The signal has to respect geography, and the same system (e.g. a
-  monsoon depression) has both a fine local footprint and a large synoptic-scale
-  driver — a single fixed-resolution model doesn't capture both cleanly.
+| Hazard | Truth | Event | Season |
+|---|---|---|---|
+| Extreme rainfall | IMD 0.25° gridded rain | ≥ 64.5 mm/day (IMD "heavy") | all year |
+| Heatwave | ERA5 daily Tmax | IMD rule: ≥ 40 °C and ≥ 4.5 °C above normal | Mar–Jun |
+| Low-pressure systems (lows, depressions, cyclones) | ERA5 + our own tracker (850 hPa vorticity ≥ 4e-5 s⁻¹ and MSLP dip ≥ 2 hPa; 97% IBTrACS hit rate) | system centre within 300 km | all year |
+| Western disturbances | ERA5 500 hPa vorticity tracker + IMD rain | ≥ 35.6 mm/day over NW India with a tracked WD within 1200 km | Dec–Mar |
+| Active / break monsoon | IMD rain over the monsoon core zone (18–28N, 73–86E) | Rajeevan-style index beyond ±1σ for ≥ 3 days | Jun–Sep |
 
----
-
-## 4. How we're solving it
-
-### Two complementary models, fused
-
-The same underlying forecast data is given to two models that represent it
-differently, because they make different mistakes and cover different failure modes:
-
-**GNN + LSTM (spatial branch)** — sees the data as a **map**. India is represented as
-a **multi-resolution mesh**: every node carries both short local edges and long-range
-coarse edges, so the model reasons about fine-scale features (localized heavy rain)
-and large-scale drivers (synoptic circulation, monsoon flow) at once, with information
-able to propagate across the whole domain in a few steps — the way real weather
-systems are shaped by their surroundings, not just their own pixel. An LSTM layer
-carries this representation across the Day 1–10 lead sequence. Output: the **gridded
-bust map**.
-
-**XGBoost (tabular branch)** — sees the *same* underlying data, reduced to engineered
-scalar features (ensemble spread, exceedance probabilities, rainfall-area statistics,
-etc.). It's the data-efficient counterpart: robust with few labelled examples, good at
-threshold/interaction rules, interpretable via SHAP. Output: an **overall bust
-probability**.
-
-**Fusion** — a logistic regression combines the two models' calibrated probabilities
-plus their disagreement into one **final overall bust probability**. Two models that
-see the same weather differently and are wrong in different ways make a stronger,
-better-calibrated combined signal than either alone — and the disagreement itself is
-informative (large disagreement flags cases the system itself is unsure about).
-
-### One backbone, six-category labeling — not six separate models
-
-The six hazard categories are used to **define and evaluate** the bust label, not to
-split the model. Six detectors (`src/detection/cyclone.py`, `heavy_rainfall.py`,
-`heatwave.py`, `monsoon_depression.py`, `western_disturbance.py`, `monsoon_phase.py`)
-each decide whether *their* hazard busted; these are OR-combined into one overall
-label (`overall_bust_label.py`). Both models predict that single unified target.
-Splitting into six separate models would starve the rarest categories (cyclones:
-~4–5 events/year) of enough labels to learn anything — pooling all hazards into one
-target is what makes the label budget workable. Per-category performance is still
-reported at evaluation time (`evaluate_by_category.py`), so the six-hazard structure
-isn't lost — it's just not baked into six separate models.
-
-### Coping with scarce labels
-
-Because bust events are rare, the spatial branch is **pretrained** on an unsupervised
-pretext task — predicting the observed field (or the forecast-error field) from the
-forecast, using ~20 years of reforecast data with no labels required — before
-fine-tuning the small labelled bust-detection head. This lets a spatially-aware model
-learn real atmospheric structure without needing thousands of labelled bust events.
-Fusing with the data-efficient XGBoost branch is the second line of defence against
-overfitting on scarce labels.
-
-*(Architecture, mesh design, environment, training plan: see
-`docs/graphnet_design.md`.)*
+Forecast: **NOAA GEFSv12** (5-member reforecast 2000–2019 for training/validation; operational
+2022 for the held-out test; operational today for live runs). NCMRWF **NEPS-G** is supported for
+live runs via ECMWF TIGGE (§6).
 
 ---
 
-## 5. Who benefits
+## 3. What a "bust" is
 
-The value isn't a new forecast — India already has forecasts. The value is knowing
-**when to trust the one you have.**
+A bust is a forecast that was **confidently wrong**, split by direction, because the two have
+different causes and different costs:
 
-- **IMD / NCMRWF (forecasters)** — see where and when their operational forecast is
-  fragile; surfaces systematic model weaknesses for future improvement.
-- **NDMA / State DMAs / district collectors** — the highest-stakes user. A flagged
-  high-bust-risk forecast means hedging toward the worse-case outcome instead of
-  trusting a falsely calm one — directly relevant to evacuation and resource
-  pre-positioning decisions.
-- **Sectors riding on each hazard category:** farmers and agromet advisories
-  (monsoon phase), dam/reservoir operators and urban flood managers (heavy rainfall),
-  coastal communities and fisheries (cyclones), power-grid load planners and public
-  health (heat waves), north-India agriculture/transport (western disturbances).
-- **Insurance / parametric weather products** (e.g. crop insurance) — sharper
-  forecast-reliability information improves risk pricing and payout triggers.
+- **Miss:** the ensemble gave the event < 20% probability (P < 0.2), and it happened.
+- **False alarm (FA):** the ensemble gave ≥ 50% (P ≥ 0.5), and it did not happen.
 
-**In one line:** *every operational forecast in India comes with no honest signal of
-when it's about to fail — this project adds that missing layer, so the people who act
-on forecasts know when to prepare for worse.*
+P is the fraction of GEFS members forecasting the event (heatwave: after removing GEFS's warm Tmax
+bias per lead, month and cell; storms: tracker thresholds matched to ERA5 frequency per lead).
+Between 0.2 and 0.5 the forecast is "uncertain", not wrong, so it cannot bust. Skill is therefore
+scored **only on eligible cells** (P < 0.2 for misses, P ≥ 0.5 for FAs); scoring over all cells
+inflates AUROC to near 1 and was rejected.
+
+Each hazard has one model with two heads, P(miss) and P(FA), per cell and lead.
+
+---
+
+## 4. Models
+
+**Inputs (per cell, per lead):** ensemble mean and spread of the forecast fields, plus derived
+signals: exceedance probabilities, neighbourhood probabilities (near-miss in position), moisture
+flux, low-level convergence and vorticity, 500 hPa gradient; for storms and WDs the per-member
+tracks (share of members with a system nearby), MJO, seasonal climatology and an upstream ERA5
+trough at issue time; for heat the observed anomaly of the last two days.
+
+**Architecture — wide-and-deep, the key design choice.** Bust labels are built from the ensemble
+probability, so an ensemble-only logistic regression is already a strong baseline; plain deep
+models failed to beat it on rare labels. We fit that logistic first, freeze it as the *wide* path,
+and train a spatial encoder (the *deep* path) to learn only the correction. The deep path is:
+
+| Hazard | Deep path |
+|---|---|
+| Rainfall | GridGraphNet: GraphSAGE over the 0.5° grid + temporal conv across leads (24 channels) |
+| Heatwave | GNN + CNN, 2 seeds each, 4 checkpoints averaged (errors are complementary) |
+| Low-pressure systems | Two GNNs averaged (one adds MJO + storm climatology), trained 2000–2015 |
+| Western disturbances | GNN + CNN, 4 checkpoints averaged, trained Dec–Mar 2000–2015 |
+| Active / break | GNN with frozen ensemble-baseline head, pooled over the core zone |
+
+Bake-offs we ran and rejected: multi-resolution mesh GNN (no gain, 2× slower), ConvLSTM (last on
+heat), XGBoost fusion (redundant once exceedance channels were inputs), self-supervised
+pretraining (same), lagged ensembles (+0.002), a GEFS storm-track correction model (systematic
+position error is < 1.2% of the total).
+
+**Calibration:** isotonic regression per lead, fitted on the validation years and frozen.
+
+**Subdivisions:** IMD's 36 meteorological subdivisions (rebuilt from Survey of India state
+boundaries). Each subdivision gets the **expected number of busting cells**, Σ pᵢ over its cells,
+calibrated per lead into a probability that the subdivision busts. **Confidence** that the
+forecast holds = (1 − P(miss)) (1 − P(FA)), graded Low / Medium / High at the validation 90th / 70th
+percentile of risk with floors of 25% / 10% bust chance. A subdivision is shaded on the map only
+when the grid itself flags ≥ 3 of its cells, so one hotspot does not paint a whole state.
+
+---
+
+## 5. Results
+
+Frozen models, eligible cells, **model vs GEFS alone** (the ensemble-only baseline).
+
+**Miss detection — the headline.**
+
+| Hazard | Validation AUROC | Validation PR-AUC | 2022 held-out PR-AUC |
+|---|---|---|---|
+| Extreme rainfall (val 2016–19) | 0.941 vs 0.894 | 0.122 vs 0.041 (3.0×) | 0.139 vs 0.051 (AUROC 0.940 vs 0.898) |
+| Heatwave | 0.978 vs 0.904 | 0.142 vs 0.018 (7.7×) | **0.204 vs 0.045** (AUROC 0.935 vs 0.857) |
+| Low-pressure systems (val 2016–19) | 0.956 vs 0.890 | 0.117 vs 0.041 (2.8×) | 0.119 vs 0.051 |
+| Western disturbances (val 2016–19) | 0.982 vs 0.907 | 0.171 vs 0.016 (11×) | 0.156 vs 0.022 (AUROC 0.977 vs 0.924) |
+| Active monsoon (val 2008–09) | 0.943 vs 0.842 | 0.347 vs 0.158 | — |
+
+Base rates are 0.1–0.5% of eligible cells, so a PR-AUC of 0.12–0.20 is 25–60× chance.
+On 2022, coloured cells bust 12% (rain) and 15% (heat) of the time vs 0.3–0.5% elsewhere.
+
+**False alarms.** Heatwave FA has real skill (AUROC 0.717 vs 0.316; 2022: 0.653 vs 0.439), and
+the monsoon FA targets improve slightly. For rain, storms and WDs the model adds nothing over the
+ensemble: when GEFS gives ≥ 50% for these, it busts 75–84% of the time regardless. We report this
+as a calibration finding about GEFS (overconfident on extremes), not as model skill.
+
+**Per subdivision (miss AUROC, validation):** rain 0.922 vs 0.883; heatwave 0.946 vs 0.824;
+storms 0.910 vs 0.849; WD 0.979 vs 0.910.
+
+**Comparison.** The closest public SIH26079 solution scores a combined miss+FA label at
+subdivision-day level, Days 3–7: AUROC 0.840, +0.032 over the IFS ensemble spread. Ours, miss-only
+on 0.5° cells, Days 1–9: rain AUROC 0.940, +0.042 over GEFS alone on the same held-out year.
+
+**Live inputs.** Two heatwave inputs (observed Tmax of the last two days) are only available
+after the fact in the reforecast. In real time we substitute a stand-in; on 2022 this drops heatwave
+miss PR-AUC from 0.204 to 0.126 (still 2.8× GEFS alone). With an operational observed-Tmax feed
+(IMD), the 0.204 figure applies. WD is unaffected (0.158 vs 0.167).
+
+---
+
+## 6. Explainability
+
+For every flagged area, **gradient × input** on the calibrated model's logit attributes the bust
+risk to each input channel; channels are grouped into named meteorological drivers (e.g. "850 hPa
+moisture", "WD approaching from the west"), and each area shows its top 4 drivers with their share
+of the push towards a bust and their physical value (mm, °C, %, or σ from normal). Subdivisions
+inherit the drivers of the flagged areas inside them, weighted by expected busts. Monsoon
+explanations attribute over the core zone. Hovering any driver in the dashboard shows a one-line
+definition.
+
+None of this needs the observed weather: risk maps, explanations, subdivisions and bulletins are
+computed from the forecast alone. Observations are only used to train, to fit the frozen
+calibration, and optionally to *Validate* a past forecast (rings on the cells that actually busted).
+
+---
+
+## 7. Operational prototype
+
+- **Dashboard (Next.js):** Forecast Desk (cells / subdivisions / confidence views, Days 1–9,
+  miss / FA / both, "does it beat GEFS alone?" skill card, reasons), Case Studies (Kerala 2018,
+  cyclones Ockhi / Fani / Bulbul, 2009 heatwaves incl. one that never came, WDs Feb and Dec 2019), Live Forecast.
+- **API (FastAPI):** `/api/grid`, `/api/regions/{hazard}`, `/api/explain/{hazard}`,
+  `/api/bulletin/{hazard}.csv` (per subdivision and day: confidence, grade, bust chance, expected
+  busting cells, main reasons), `/api/live/*`.
+- **Live runs:** downloads today's **GEFS** (NOAA, ~6 h after 00 UTC) or **NCMRWF NEPS-G** (ECMWF
+  TIGGE, 48 h embargo; control + 4 members regridded to 0.5°), runs all in-season hazards in
+  about a minute, optionally every day automatically. NEPS runs zero-shot through the GEFS-trained
+  models; comparing NEPS against GEFS on the same date works, but NEPS needs its own tracker
+  thresholds and Tmax bias correction before its storm and heat risks are trustworthy (needs NEPS
+  hindcasts). A demo mode replays forecasts already on disk.
+
+---
+
+## 8. Limitations
+
+- **Day 10:** our training data and models cover leads 1–9; Day 10 was left out of scope for
+  time. Adding it means one more lead in the downloads and a retrain, not a design change.
+- **False alarms** carry skill only for heat (see §5).
+- **2022 heatwave** was a record year (GEFS bias +2.1 °C vs +1.4 °C in training); the model still held.
+- **Monsoon active/break** is validated on 2008–09 only and not yet available live.
+- **Five members:** with GEFS's 5 members, a miss means no member forecast the event at all; a
+  larger ensemble (NEPS, 12 members) would give finer probabilities once the models are adapted.
+
+---
+
+## 9. Who uses it
+
+- **IMD / NCMRWF forecasters:** where and why today's ensemble is fragile, before issuing warnings.
+- **NDMA / state disaster authorities:** a "low confidence" subdivision is a cue to prepare for the
+  worse outcome rather than trust a calm forecast.
+- **Sector users:** reservoir and urban-flood managers (rain), coastal and fisheries (storms),
+  health and power (heat), north-India agriculture and transport (WDs), agromet advisories (monsoon).
+
+Repository map: `src/detection/` (bust labels, trackers), `src/features/` (inputs),
+`scripts/train_*` / `export_*` (models, dashboard exports), `scripts/live_forecast.py` (live
+pipeline), `api/` (FastAPI), `web/` (dashboard).
